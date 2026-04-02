@@ -13,6 +13,9 @@ namespace BambooBrain_Service.Models
         [JsonProperty("name")]
         public string Name { get; set; } = string.Empty;
 
+        [JsonProperty("image")]
+        public string Image { get; set; } = string.Empty;
+
         [JsonProperty("passwordHash")]
         public string PasswordHash { get; set; } = string.Empty;
 
