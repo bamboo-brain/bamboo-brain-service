@@ -1,0 +1,39 @@
+# Build outputs
+bin/
+obj/
+
+# Visual Studio files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docview
+
+# Rider IDE
+.idea/
+
+# NuGet packages (restored automatically)
+packages/
+*.nupkg
+*.snupkg
+
+# Environment & secrets — MOST IMPORTANT
+appsettings.Development.json
+appsettings.Production.json
+
+# Publishing profiles (contain deployment credentials)
+**/Properties/PublishProfiles/
+*.pubxml
+*.pubxml.user
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test results
+TestResults/
+coverage/

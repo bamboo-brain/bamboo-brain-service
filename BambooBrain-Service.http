@@ -1,0 +1,6 @@
+@BambooBrain_Service_HostAddress = http://localhost:5278
+
+GET {{BambooBrain_Service_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
