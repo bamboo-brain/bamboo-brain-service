@@ -55,5 +55,31 @@ namespace BambooBrain_Service.Repositories.Users
             var response = await _container.ReplaceItemAsync(user, user.Id, new PartitionKey(user.Id));
             return response.Resource;
         }
+
+        public async Task<Models.User> UpsertOAuthUserAsync(UpsertOAuthUserRequest request)
+        {
+            // Check if user already exists
+            var existing = await GetByEmailAsync(request.Email);
+
+            if (existing != null)
+            {
+                // User exists — just return them without modifying anything
+                // (preserve their onboarding state and settings)
+                return existing;
+            }
+
+            // New OAuth user — create them
+            var user = new Models.User
+            {
+                Email = request.Email.ToLower(),
+                Name = request.Name,
+                Image = request.Image,
+                Provider = request.Provider,
+                PasswordHash = string.Empty, // no password for OAuth users
+                IsOnboardingComplete = false
+            };
+
+            return await CreateAsync(user);
+        }
     }
 }
