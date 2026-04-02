@@ -1,0 +1,107 @@
+﻿using BambooBrain_Service.Models;
+using BambooBrain_Service.Repositories.Documents;
+using BambooBrain_Service.Services.BlobStorage;
+
+namespace BambooBrain_Service.Services.Document
+{
+    public class DocumentService : IDocumentService
+    {
+        private readonly IDocumentRepository _documents;
+        private readonly IBlobStorageService _blob;
+        private readonly IConfiguration _config;
+
+        private static readonly Dictionary<string, (string fileType, string container)> _mimeMap = new()
+        {
+            ["application/pdf"] = ("pdf", "documents"),
+            ["application/vnd.openxmlformats-officedocument.presentationml.presentation"] = ("ppt", "documents"),
+            ["application/vnd.ms-powerpoint"] = ("ppt", "documents"),
+            ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"] = ("pdf", "documents"),
+            ["video/mp4"] = ("video", "videos"),
+            ["video/mpeg"] = ("video", "videos"),
+            ["video/quicktime"] = ("video", "videos"),
+            ["audio/mpeg"] = ("audio", "audios"),
+            ["audio/mp4"] = ("audio", "audios"),
+            ["audio/wav"] = ("audio", "audios"),
+            ["audio/x-m4a"] = ("audio", "audios"),
+        };
+
+        public DocumentService(
+            IDocumentRepository documents,
+            IBlobStorageService blob,
+            IConfiguration config)
+        {
+            _documents = documents;
+            _blob = blob;
+            _config = config;
+        }
+
+        public async Task<Models.Document> UploadDocumentAsync(string userId, IFormFile file)
+        {
+            // Validate file type
+            if (!_mimeMap.TryGetValue(file.ContentType, out var fileInfo))
+                throw new InvalidOperationException($"Unsupported file type: {file.ContentType}");
+
+            var (fileType, container) = fileInfo;
+
+            // Upload to Blob Storage
+            using var stream = file.OpenReadStream();
+            var (blobPath, blobUrl) = await _blob.UploadAsync(
+                stream, file.FileName, file.ContentType, container);
+
+            // Create document record in Cosmos DB
+            var document = new Models.Document
+            {
+                UserId = userId,
+                FileName = file.FileName,
+                FileType = fileType,
+                MimeType = file.ContentType,
+                FileSize = file.Length,
+                BlobPath = blobPath,
+                BlobUrl = blobUrl,
+                ExtractionStatus = "pending",
+            };
+
+            var created = await _documents.CreateAsync(document);
+
+            // Trigger async extraction (fire and forget)
+            _ = Task.Run(() => TriggerExtractionAsync(created));
+
+            return created;
+        }
+
+        public async Task<List<Models.Document>> GetUserDocumentsAsync(string userId)
+            => await _documents.GetByUserIdAsync(userId);
+
+        public async Task<Models.Document?> GetDocumentAsync(string id, string userId)
+            => await _documents.GetByIdAsync(id, userId);
+
+        public async Task DeleteDocumentAsync(string id, string userId)
+        {
+            var doc = await _documents.GetByIdAsync(id, userId);
+            if (doc == null) return;
+
+            // Determine container from file type
+            var container = doc.FileType == "video" ? "videos"
+                          : doc.FileType == "audio" ? "audios"
+                          : "documents";
+
+            await _blob.DeleteAsync(doc.BlobPath, container);
+            await _documents.DeleteAsync(id, userId);
+        }
+
+        private async Task TriggerExtractionAsync(Models.Document document)
+        {
+            // Update status to analyzing
+            document.ExtractionStatus = "analyzing";
+            document.ExtractionProgress = 10;
+            await _documents.UpdateAsync(document);
+
+            // Actual extraction logic will go here in the next step
+            // For now just mark as ready after a delay (placeholder)
+            await Task.Delay(3000);
+            document.ExtractionStatus = "ready";
+            document.ExtractionProgress = 100;
+            await _documents.UpdateAsync(document);
+        }
+    }
+}

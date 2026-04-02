@@ -5,6 +5,9 @@ using BambooBrain_Service.Services.Auth;
 using Microsoft.Azure.Cosmos;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using BambooBrain_Service.Repositories.Documents;
+using BambooBrain_Service.Services.BlobStorage;
+using BambooBrain_Service.Services.Document;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,6 +45,13 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader()
               .AllowAnyMethod());
 });
+
+// Blob Storage
+builder.Services.AddSingleton<IBlobStorageService, BlobStorageService>();
+
+// Document feature
+builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
+builder.Services.AddScoped<IDocumentService, DocumentService>();
 
 // ↓ ADD THESE TWO LINES
 builder.Services.AddEndpointsApiExplorer();
