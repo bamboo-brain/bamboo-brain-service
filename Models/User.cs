@@ -36,5 +36,8 @@ namespace BambooBrain_Service.Models
 
         [JsonProperty("areaOfInterests")]
         public List<string> AreaOfInterests { get; set; } = new List<string>();
+
+        [JsonProperty("isOnboardingComplete")]
+        public bool IsOnboardingComplete { get; set; } = false;
     }
 }

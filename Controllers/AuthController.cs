@@ -27,7 +27,7 @@ namespace BambooBrain_Service.Controllers
             {
                 message,
                 token,
-                user = new { user!.Id, user.Name, user.Email, user.HskLevel }
+                user = new { user!.Id, user.Name, user.Email, user.HskLevel, user.Image, user.IsOnboardingComplete }
             });
         }
 
@@ -43,7 +43,7 @@ namespace BambooBrain_Service.Controllers
             {
                 message,
                 token,
-                user = new { user!.Id, user.Name, user.Email, user.HskLevel }
+                user = new { user!.Id, user.Name, user.Email, user.HskLevel, user.Image, user.IsOnboardingComplete }
             });
         }
     }

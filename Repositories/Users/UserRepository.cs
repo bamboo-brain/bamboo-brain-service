@@ -36,5 +36,24 @@ namespace BambooBrain_Service.Repositories.Users
             var response = await _container.CreateItemAsync(user, new PartitionKey(user.Id));
             return response.Resource;
         }
+
+        public async Task<Models.User?> GetByIdAsync(string id)
+        {
+            try
+            {
+                var response = await _container.ReadItemAsync<Models.User>(id, new PartitionKey(id));
+                return response.Resource;
+            }
+            catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                return null;
+            }
+        }
+
+        public async Task<Models.User> UpdateAsync(Models.User user)
+        {
+            var response = await _container.ReplaceItemAsync(user, user.Id, new PartitionKey(user.Id));
+            return response.Resource;
+        }
     }
 }

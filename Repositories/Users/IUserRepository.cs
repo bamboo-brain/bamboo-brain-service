@@ -6,5 +6,7 @@ namespace BambooBrain_Service.Repositories.Users
     {
         Task<User?> GetByEmailAsync(string email);
         Task<User> CreateAsync(User user);
+        Task<User?> GetByIdAsync(string id);
+        Task<User> UpdateAsync(User user);
     }
 }
