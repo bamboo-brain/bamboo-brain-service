@@ -26,7 +26,7 @@ namespace BambooBrain_Service.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         [JsonProperty("hskLevel")]
-        public int HskLevel { get; set; } = 1;
+        public int HskLevel { get; set; } = 0;
 
         [JsonProperty("isGcalSyncEnabled")]
         public bool IsGcalSyncEnabled { get; set; } = false;
