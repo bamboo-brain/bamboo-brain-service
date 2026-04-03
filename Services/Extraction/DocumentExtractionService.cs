@@ -7,13 +7,14 @@ using BambooBrain_Service.Services.BlobStorage;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text;
+using OpenAI.Chat;
 
 namespace BambooBrain_Service.Services.Extraction
 {
     public class DocumentExtractionService : IExtractionService
     {
         private readonly DocumentAnalysisClient _docClient;
-        private readonly OpenAIClient _openAiClient;
+        private readonly AzureOpenAIClient _openAiClient;
         private readonly IDocumentRepository _documents;
         private readonly IBlobStorageService _blob;
         private readonly IConfiguration _config;
@@ -35,9 +36,10 @@ namespace BambooBrain_Service.Services.Extraction
                 new AzureKeyCredential(config["DocumentIntelligence:ApiKey"]!)
             );
 
-            _openAiClient = new OpenAIClient(
+            _openAiClient = new AzureOpenAIClient(
                 new Uri(config["AzureOpenAI:Endpoint"]!),
-                new AzureKeyCredential(config["AzureOpenAI:ApiKey"]!)
+                new AzureKeyCredential(config["AzureOpenAI:ApiKey"]!),
+                new AzureOpenAIClientOptions(AzureOpenAIClientOptions.ServiceVersion.V2024_10_21)
             );
         }
 
@@ -47,38 +49,47 @@ namespace BambooBrain_Service.Services.Extraction
             {
                 _logger.LogInformation("Starting extraction for document {Id}", document.Id);
 
-                // Step 1 — update status to analyzing
                 await UpdateProgressAsync(document, "analyzing", 10);
 
-                // Step 2 — download file from blob
-                var container = "documents";
-                var fileStream = await _blob.DownloadAsync(document.BlobPath, container);
+                // Determine container from file type
+                var container = document.FileType == "video" ? "videos"
+                              : document.FileType == "audio" ? "audios"
+                              : "documents";
+
+                // Download from blob
+                var blobStream = await _blob.DownloadAsync(document.BlobPath, container);
                 await UpdateProgressAsync(document, "analyzing", 20);
 
-                // Step 3 — extract raw text using Document Intelligence
-                var rawText = await ExtractTextAsync(fileStream, document.MimeType);
+                // ← Copy to MemoryStream to make it seekable
+                using var memoryStream = new MemoryStream();
+                await blobStream.CopyToAsync(memoryStream);
+                memoryStream.Position = 0;  // ← reset position before reading
+
+                // Extract raw text
+                var rawText = await ExtractTextAsync(memoryStream, document.MimeType);
                 await UpdateProgressAsync(document, "analyzing", 50);
 
                 if (string.IsNullOrWhiteSpace(rawText))
                 {
+                    _logger.LogWarning("No text extracted from document {Id}", document.Id);
                     await UpdateStatusAsync(document, "failed");
                     return;
                 }
 
-                // Step 4 — extract Chinese words using GPT-4o
+                // Extract Chinese words
                 var extractedWords = await ExtractChineseWordsAsync(rawText);
                 await UpdateProgressAsync(document, "analyzing", 80);
 
-                // Step 5 — determine HSK level from extracted words
+                // Determine HSK level
                 var hskLevel = DetermineHskLevel(extractedWords);
 
-                // Step 6 — generate tags using GPT-4o
+                // Generate tags
                 var tags = await GenerateTagsAsync(rawText);
                 await UpdateProgressAsync(document, "analyzing", 90);
 
-                // Step 7 — save results
+                // Save results
                 document.ExtractedText = rawText.Length > 50000
-                    ? rawText[..50000]  // cap at 50k chars to save storage
+                    ? rawText[..50000]
                     : rawText;
                 document.ExtractedWords = extractedWords;
                 document.HskLevel = hskLevel;
@@ -127,55 +138,56 @@ namespace BambooBrain_Service.Services.Extraction
 
         private async Task<List<ExtractedWord>> ExtractChineseWordsAsync(string rawText)
         {
-            // Truncate text if too long for a single prompt
-            var textSample = rawText.Length > 8000
-                ? rawText[..8000]
-                : rawText;
+            var textSample = rawText.Length > 8000 ? rawText[..8000] : rawText;
 
             var prompt = $$"""
                 You are a Chinese language expert. Extract all unique Chinese vocabulary words from the text below.
-    
-                For each word, provide:
+        
+                For each word provide:
                 - word: the Chinese characters
                 - pinyin: pronunciation with tone marks (e.g. "Běijīng")
                 - meaning: concise English meaning
-                - hskLevel: HSK level 1-6 (null if unknown or not in HSK)
+                - hskLevel: HSK level 1-6 (null if unknown)
                 - frequency: how many times it appears in the text
-    
+        
                 Return ONLY a JSON array. No explanation, no markdown, no code blocks.
-                Format: [{"word":"你好","pinyin":"nǐ hǎo","meaning":"hello","hskLevel":1,"frequency":3}]
-    
-                If there are no Chinese characters in the text, return an empty array: []
-    
+                Example: [{"word":"你好","pinyin":"nǐ hǎo","meaning":"hello","hskLevel":1,"frequency":3}]
+                If no Chinese characters exist return: []
+        
                 TEXT:
                 {{textSample}}
                 """;
 
-            var chatOptions = new ChatCompletionsOptions
-            {
-                DeploymentName = _config["AzureOpenAI:DeploymentName"],
-                Messages =
-            {
-                new ChatRequestSystemMessage(
-                    "You are a Chinese language expert. Always respond with valid JSON only."),
-                new ChatRequestUserMessage(prompt)
-            },
-                MaxTokens = 4000,
-                Temperature = 0.1f  // low temperature for consistent structured output
-            };
+            var chatClient = _openAiClient.GetChatClient(_config["AzureOpenAI:DeploymentName"]!);
 
-            var response = await _openAiClient.GetChatCompletionsAsync(chatOptions);
-            var content = response.Value.Choices[0].Message.Content;
+            var completion = await chatClient.CompleteChatAsync(
+                new List<ChatMessage>
+                {
+            new SystemChatMessage("You are a Chinese language expert. Always respond with valid JSON only."),
+            new UserChatMessage(prompt)
+                },
+                new ChatCompletionOptions
+                {
+                    MaxOutputTokenCount = 4000,
+                    Temperature = 0.1f
+                }
+            );
+
+            var content = completion.Value.Content[0].Text
+                .Replace("```json", "")
+                .Replace("```", "")
+                .Trim();
 
             try
             {
-                var words = JsonSerializer.Deserialize<List<ExtractedWord>>(content,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                return words ?? new List<ExtractedWord>();
+                return JsonSerializer.Deserialize<List<ExtractedWord>>(content,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                    ?? new List<ExtractedWord>();
             }
-            catch
+            catch (Exception ex)
             {
-                _logger.LogWarning("Failed to parse extracted words JSON: {Content}", content);
+                _logger.LogWarning("Failed to parse words JSON: {Error}\nContent: {Content}",
+                    ex.Message, content);
                 return new List<ExtractedWord>();
             }
         }
@@ -186,41 +198,42 @@ namespace BambooBrain_Service.Services.Extraction
         {
             var textSample = rawText.Length > 3000 ? rawText[..3000] : rawText;
 
-            var prompt = $"""
-            Based on this Chinese text, generate 3-6 relevant topic tags in English.
-            Tags should reflect the main topics, themes, or context of the document.
-            Examples: "travel", "business", "food", "culture", "daily conversation", "history"
-            
-            Return ONLY a JSON array of strings. No explanation.
-            Example: ["travel", "culture", "Beijing"]
-            
-            TEXT:
-            {textSample}
-            """;
+            var prompt = $$"""
+                Based on this Chinese text, generate 3-6 relevant topic tags in English.
+                Return ONLY a JSON array of strings. No explanation.
+                Example: ["travel", "culture", "Beijing"]
+        
+                TEXT:
+                {{textSample}}
+                """;
 
-            var chatOptions = new ChatCompletionsOptions
-            {
-                DeploymentName = _config["AzureOpenAI:DeploymentName"],
-                Messages =
-            {
-                new ChatRequestSystemMessage(
-                    "You are a helpful assistant. Always respond with valid JSON only."),
-                new ChatRequestUserMessage(prompt)
-            },
-                MaxTokens = 200,
-                Temperature = 0.3f
-            };
+            var chatClient = _openAiClient.GetChatClient(_config["AzureOpenAI:DeploymentName"]!);
 
-            var response = await _openAiClient.GetChatCompletionsAsync(chatOptions);
-            var content = response.Value.Choices[0].Message.Content;
+            var completion = await chatClient.CompleteChatAsync(
+                new List<ChatMessage>
+                {
+            new SystemChatMessage("You are a helpful assistant. Always respond with valid JSON only."),
+            new UserChatMessage(prompt)
+                },
+                new ChatCompletionOptions
+                {
+                    MaxOutputTokenCount = 200,
+                    Temperature = 0.3f
+                }
+            );
+
+            var content = completion.Value.Content[0].Text
+                .Replace("```json", "")
+                .Replace("```", "")
+                .Trim();
 
             try
             {
-                return JsonSerializer.Deserialize<List<string>>(content) ?? new List<string>();
+                return JsonSerializer.Deserialize<List<string>>(content) ?? new();
             }
             catch
             {
-                return new List<string>();
+                return new();
             }
         }
 

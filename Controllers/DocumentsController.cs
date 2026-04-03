@@ -18,7 +18,8 @@ namespace BambooBrain_Service.Controllers
         }
 
         [HttpPost("upload")]
-        [RequestSizeLimit(104_857_600)] // 100MB limit
+        [DisableRequestSizeLimit]
+        [RequestFormLimits(MultipartBodyLengthLimit = 104_857_600)]
         public async Task<IActionResult> Upload(IFormFile file)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
