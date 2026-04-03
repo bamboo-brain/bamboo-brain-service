@@ -10,7 +10,9 @@ namespace BambooBrain_Service.Services.Document
         private readonly IDocumentRepository _documents;
         private readonly IBlobStorageService _blob;
         private readonly IConfiguration _config;
-        private readonly IExtractionService _extraction;
+        private readonly IExtractionService _documentExtraction;
+        private readonly AudioExtractionService _audioExtraction;
+        private readonly ILogger<AudioExtractionService> _logger;
 
         private static readonly Dictionary<string, (string fileType, string container)> _mimeMap = new()
         {
@@ -30,12 +32,16 @@ namespace BambooBrain_Service.Services.Document
         public DocumentService(
             IDocumentRepository documents,
             IBlobStorageService blob,
-            IExtractionService extraction,
+            IExtractionService documentExtraction,
+            AudioExtractionService audioExtraction,
+            ILogger<AudioExtractionService> logger,
             IConfiguration config)
         {
             _documents = documents;
             _blob = blob;
-            _extraction = extraction;
+            _documentExtraction = documentExtraction;
+            _audioExtraction = audioExtraction;
+            _logger = logger;
             _config = config;
         }
 
@@ -103,12 +109,22 @@ namespace BambooBrain_Service.Services.Document
 
         private async Task TriggerExtractionAsync(Models.Document document)
         {
-            // Only run for document types
-            if (document.FileType is not ("pdf" or "ppt"))
-                return;
+            _logger.LogInformation("Triggering extraction for {Id}, type: {Type}",
+                document.Id, document.FileType);  // ← add this log
 
-            // Fire and forget — runs in background without blocking upload response
-            await _extraction.ExtractAsync(document);
+            switch (document.FileType)
+            {
+                case "pdf":
+                case "ppt":
+                    _ = Task.Run(() => _documentExtraction.ExtractAsync(document));
+                    break;
+                case "audio":
+                    _ = Task.Run(() => _audioExtraction.ExtractAsync(document));
+                    break;
+                default:
+                    _logger.LogWarning("No extraction handler for type: {Type}", document.FileType);
+                    break;
+            }
         }
     }
 }
