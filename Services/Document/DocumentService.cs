@@ -1,6 +1,7 @@
 ﻿using BambooBrain_Service.Models;
 using BambooBrain_Service.Repositories.Documents;
 using BambooBrain_Service.Services.BlobStorage;
+using BambooBrain_Service.Services.Extraction;
 
 namespace BambooBrain_Service.Services.Document
 {
@@ -9,6 +10,7 @@ namespace BambooBrain_Service.Services.Document
         private readonly IDocumentRepository _documents;
         private readonly IBlobStorageService _blob;
         private readonly IConfiguration _config;
+        private readonly IExtractionService _extraction;
 
         private static readonly Dictionary<string, (string fileType, string container)> _mimeMap = new()
         {
@@ -28,10 +30,12 @@ namespace BambooBrain_Service.Services.Document
         public DocumentService(
             IDocumentRepository documents,
             IBlobStorageService blob,
+            IExtractionService extraction,
             IConfiguration config)
         {
             _documents = documents;
             _blob = blob;
+            _extraction = extraction;
             _config = config;
         }
 
@@ -99,17 +103,12 @@ namespace BambooBrain_Service.Services.Document
 
         private async Task TriggerExtractionAsync(Models.Document document)
         {
-            // Update status to analyzing
-            document.ExtractionStatus = "analyzing";
-            document.ExtractionProgress = 10;
-            await _documents.UpdateAsync(document);
+            // Only run for document types
+            if (document.FileType is not ("pdf" or "ppt"))
+                return;
 
-            // Actual extraction logic will go here in the next step
-            // For now just mark as ready after a delay (placeholder)
-            await Task.Delay(3000);
-            document.ExtractionStatus = "ready";
-            document.ExtractionProgress = 100;
-            await _documents.UpdateAsync(document);
+            // Fire and forget — runs in background without blocking upload response
+            await _extraction.ExtractAsync(document);
         }
     }
 }

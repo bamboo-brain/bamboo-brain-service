@@ -8,6 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using BambooBrain_Service.Repositories.Documents;
 using BambooBrain_Service.Services.BlobStorage;
 using BambooBrain_Service.Services.Document;
+using BambooBrain_Service.Services.Extraction;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -52,6 +53,7 @@ builder.Services.AddSingleton<IBlobStorageService, BlobStorageService>();
 // Document feature
 builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
 builder.Services.AddScoped<IDocumentService, DocumentService>();
+builder.Services.AddScoped<IExtractionService, DocumentExtractionService>();
 
 // ↓ ADD THESE TWO LINES
 builder.Services.AddEndpointsApiExplorer();

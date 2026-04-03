@@ -91,5 +91,25 @@ namespace BambooBrain_Service.Controllers
             await _documentService.DeleteDocumentAsync(id, userId);
             return NoContent();
         }
+
+        [HttpGet("{id}/status")]
+        public async Task<IActionResult> GetStatus(string id)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userId == null) return Unauthorized();
+
+            var document = await _documentService.GetDocumentAsync(id, userId);
+            if (document == null) return NotFound();
+
+            return Ok(new
+            {
+                id = document.Id,
+                extractionStatus = document.ExtractionStatus,
+                extractionProgress = document.ExtractionProgress,
+                hskLevel = document.HskLevel,
+                wordCount = document.ExtractedWords.Count,
+                tags = document.Tags
+            });
+        }
     }
 }
