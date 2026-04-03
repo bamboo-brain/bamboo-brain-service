@@ -6,8 +6,14 @@ namespace BambooBrain_Service.Repositories.Documents
     {
         Task<Document> CreateAsync(Document document);
         Task<Document?> GetByIdAsync(string id, string userId);
-        Task<List<Document>> GetByUserIdAsync(string userId);
+        Task<(List<Document> items, string? continuationToken, int totalCount)> GetByUserIdAsync(
+            string userId,
+            int pageSize,
+            string? continuationToken,
+            string? fileTypeFilter,
+            string? searchQuery);
         Task<Document> UpdateAsync(Document document);
         Task DeleteAsync(string id, string userId);
+        Task<int> GetTotalCountAsync(string userId, string? fileTypeFilter, string? searchQuery);
     }
 }

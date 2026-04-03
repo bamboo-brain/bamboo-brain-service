@@ -42,13 +42,32 @@ namespace BambooBrain_Service.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetAll(
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? continuationToken = null,
+            [FromQuery] string? fileType = null,      // "pdf" | "video" | "audio" | "ppt" | "all"
+            [FromQuery] string? search = null)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (userId == null) return Unauthorized();
 
-            var documents = await _documentService.GetUserDocumentsAsync(userId);
-            return Ok(documents);
+            if (pageSize < 1 || pageSize > 50)
+                return BadRequest(new { message = "pageSize must be between 1 and 50." });
+
+            var (items, nextToken, totalCount) = await _documentService.GetUserDocumentsAsync(
+                userId, pageSize, continuationToken, fileType, search);
+
+            return Ok(new
+            {
+                items,
+                pagination = new
+                {
+                    pageSize,
+                    totalCount,
+                    continuationToken = nextToken,
+                    hasMore = nextToken != null
+                }
+            });
         }
 
         [HttpGet("{id}")]

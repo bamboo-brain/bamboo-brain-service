@@ -69,8 +69,16 @@ namespace BambooBrain_Service.Services.Document
             return created;
         }
 
-        public async Task<List<Models.Document>> GetUserDocumentsAsync(string userId)
-            => await _documents.GetByUserIdAsync(userId);
+        public async Task<(List<Models.Document> items, string? continuationToken, int totalCount)> GetUserDocumentsAsync(
+            string userId,
+            int pageSize = 10,
+            string? continuationToken = null,
+            string? fileTypeFilter = null,
+            string? searchQuery = null)
+        {
+            return await _documents.GetByUserIdAsync(
+                userId, pageSize, continuationToken, fileTypeFilter, searchQuery);
+        }
 
         public async Task<Models.Document?> GetDocumentAsync(string id, string userId)
             => await _documents.GetByIdAsync(id, userId);
