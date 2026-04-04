@@ -4,6 +4,7 @@
     {
         public string Transcript { get; set; } = string.Empty;
         public string? Duration { get; set; }
+        public List<WordTiming> WordTimings { get; set; } = new();
     }
 
     public class TranscriptionResponse
@@ -54,5 +55,19 @@
     {
         public string? Offset { get; set; }
         public string? Duration { get; set; }
+        public List<NBest>? NBest { get; set; }
+    }
+
+    public class NBest
+    {
+        public string? Display { get; set; }
+        public List<WordTiming>? Words { get; set; }
+    }
+
+    public class WordTiming
+    {
+        public string? Word { get; set; }
+        public string? Offset { get; set; }   // ISO 8601 duration
+        public string? Duration { get; set; } // ISO 8601 duration
     }
 }

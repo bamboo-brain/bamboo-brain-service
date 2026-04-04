@@ -78,6 +78,8 @@ namespace BambooBrain_Service.Services.Extraction
 
                 // Step 4 — Extract Chinese words
                 var extractedWords = await ExtractChineseWordsAsync(transcriptionResult.Transcript);
+                // Map timestamps to extracted words
+                MapTimestampsToWords(extractedWords, transcriptionResult.WordTimings);
                 await UpdateProgressAsync(document, "analyzing", 80);
 
                 var hskLevel = DetermineHskLevel(extractedWords);
@@ -146,12 +148,11 @@ namespace BambooBrain_Service.Services.Extraction
                 displayName = $"transcription_{fileName}_{DateTime.UtcNow:yyyyMMddHHmmss}",
                 properties = new
                 {
-                    wordLevelTimestampsEnabled = false,
+                    wordLevelTimestampsEnabled = true,  // ← enable this
                     punctuationMode = "DictatedAndAutomatic",
                     profanityFilterMode = "Masked",
                     languageIdentification = new
                     {
-                        // Auto-detect between Chinese and English
                         candidateLocales = new[] { "zh-CN", "en-US" }
                     }
                 }
@@ -227,7 +228,6 @@ namespace BambooBrain_Service.Services.Extraction
 
         private async Task<TranscriptResult?> GetTranscriptContentAsync(string transcriptionId)
         {
-            // Get list of result files
             var response = await _httpClient.GetAsync(
                 $"{SpeechApiBase}/transcriptions/{transcriptionId}/files");
             var body = await response.Content.ReadAsStringAsync();
@@ -235,65 +235,59 @@ namespace BambooBrain_Service.Services.Extraction
             var files = JsonSerializer.Deserialize<TranscriptionFilesResponse>(body,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-            // Find the transcript result file
             var transcriptFile = files?.Values?
                 .FirstOrDefault(f => f.Kind == "Transcription");
 
-            _logger.LogInformation("Transcript URL: {Url}", transcriptFile.Links.ContentUrl);
+            if (transcriptFile?.Links?.ContentUrl == null) return null;
 
-            if (transcriptFile?.Links?.ContentUrl == null)
-            {
-                _logger.LogError("No transcript file found");
-                return null;
-            }
-
-            // Download the actual transcript JSON
-            var transcriptResponse = new HttpResponseMessage();
-            for (int i = 0; i < 3; i++)
-            {
-                transcriptResponse = await _httpClient.GetAsync(transcriptFile.Links.ContentUrl);
-                if (response.IsSuccessStatusCode)
-                    break;
-
-                await Task.Delay(2000);
-            }
-
+            var transcriptResponse = await _httpClient.GetAsync(transcriptFile.Links.ContentUrl);
             var transcriptBody = await transcriptResponse.Content.ReadAsStringAsync();
 
             var transcript = JsonSerializer.Deserialize<TranscriptContent>(transcriptBody,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-            // Combine all recognized phrases into one text
             var sb = new StringBuilder();
+            var wordTimings = new List<WordTiming>();
             var totalDuration = TimeSpan.Zero;
 
-            if (transcript?.CombinedRecognizedPhrases != null)
+            if (transcript?.RecognizedPhrases != null)
             {
-                foreach (var phrase in transcript.CombinedRecognizedPhrases)
+                foreach (var phrase in transcript.RecognizedPhrases)
                 {
-                    sb.AppendLine(phrase.Display);
-                }
-            }
-            if (transcript?.CombinedRecognizedPhrases == null)
-            {
-                _logger.LogError("No phrases found in transcript");
-                return null;
-            }
+                    // Get best recognition result
+                    var best = phrase.NBest?.FirstOrDefault();
+                    if (best == null) continue;
 
-            if (transcript?.RecognizedPhrases != null && transcript.RecognizedPhrases.Any())
-            {
-                var lastPhrase = transcript.RecognizedPhrases.Last();
-                // Parse duration from ISO 8601 format e.g. "PT1M30.5S"
-                var offset = XmlConvert.ToTimeSpan(lastPhrase.Offset);
-                var duration = XmlConvert.ToTimeSpan(lastPhrase.Duration);
-                totalDuration = offset + duration;
+                    sb.AppendLine(best.Display);
+
+                    // Collect word timings
+                    if (best.Words != null)
+                        wordTimings.AddRange(best.Words);
+                }
+
+                var lastPhrase = transcript.RecognizedPhrases.LastOrDefault();
+                if (lastPhrase != null)
+                {
+                    var offset = ParseIsoDuration(lastPhrase.Offset);
+                    var duration = ParseIsoDuration(lastPhrase.Duration);
+                    totalDuration = offset + duration;
+                }
             }
 
             return new TranscriptResult
             {
                 Transcript = sb.ToString().Trim(),
-                Duration = FormatDuration(totalDuration)
+                Duration = FormatDuration(totalDuration),
+                WordTimings = wordTimings
             };
+        }
+
+        // Parse ISO 8601 duration e.g. "PT1M30.5S" or "PT1.23S"
+        private static TimeSpan ParseIsoDuration(string? iso)
+        {
+            if (string.IsNullOrEmpty(iso)) return TimeSpan.Zero;
+            try { return System.Xml.XmlConvert.ToTimeSpan(iso); }
+            catch { return TimeSpan.Zero; }
         }
 
         // ── Step 4: Delete job after completion ────────────────────────────────
@@ -424,6 +418,25 @@ namespace BambooBrain_Service.Services.Extraction
             document.ExtractionStatus = status;
             document.UpdatedAt = DateTime.UtcNow;
             await _documents.UpdateAsync(document);
+        }
+
+        private void MapTimestampsToWords(
+            List<ExtractedWord> extractedWords,
+            List<WordTiming> wordTimings)
+        {
+            foreach (var extracted in extractedWords)
+            {
+                // Find the first occurrence of this word in the timings
+                var timing = wordTimings.FirstOrDefault(w =>
+                    w.Word != null &&
+                    (w.Word.Contains(extracted.Word) || extracted.Word.Contains(w.Word)));
+
+                if (timing != null)
+                {
+                    extracted.OffsetSeconds = ParseIsoDuration(timing.Offset).TotalSeconds;
+                    extracted.DurationSeconds = ParseIsoDuration(timing.Duration).TotalSeconds;
+                }
+            }
         }
     }
 }

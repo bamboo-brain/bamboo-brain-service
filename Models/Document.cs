@@ -58,7 +58,6 @@ namespace BambooBrain_Service.Models
         [JsonProperty("updatedAt")]
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     }
-
     public class ExtractedWord
     {
         [JsonProperty("word")]
@@ -75,5 +74,11 @@ namespace BambooBrain_Service.Models
 
         [JsonProperty("frequency")]
         public int Frequency { get; set; } = 1;
+
+        [JsonProperty("offsetSeconds")]
+        public double? OffsetSeconds { get; set; }
+
+        [JsonProperty("durationSeconds")]
+        public double? DurationSeconds { get; set; }
     }
 }
