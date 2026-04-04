@@ -10,6 +10,7 @@ namespace BambooBrain_Service.Services.Document
             int pageSize = 10,
             string? continuationToken = null,
             string? fileTypeFilter = null,
+            int? hskLevelFilter = null,
             string? searchQuery = null);
         Task<Models.Document?> GetDocumentAsync(string id, string userId);
         Task DeleteDocumentAsync(string id, string userId);
