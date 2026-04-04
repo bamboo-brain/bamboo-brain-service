@@ -1,5 +1,6 @@
 ﻿using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs;
+using Azure.Storage.Sas;
 
 namespace BambooBrain_Service.Services.BlobStorage
 {
@@ -43,6 +44,25 @@ namespace BambooBrain_Service.Services.BlobStorage
             var blobClient = containerClient.GetBlobClient(blobPath);
             var response = await blobClient.DownloadAsync();
             return response.Value.Content;
+        }
+
+        public async Task<string> GenerateSasUrlAsync(
+            string blobPath, string containerName, int expiryMinutes = 60)
+        {
+            var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
+            var blobClient = containerClient.GetBlobClient(blobPath);
+
+            var sasBuilder = new BlobSasBuilder
+            {
+                BlobContainerName = containerName,
+                BlobName = blobPath,
+                Resource = "b",
+                ExpiresOn = DateTimeOffset.UtcNow.AddMinutes(expiryMinutes)
+            };
+            sasBuilder.SetPermissions(BlobSasPermissions.Read);
+
+            var sasUri = blobClient.GenerateSasUri(sasBuilder);
+            return await Task.FromResult(sasUri.ToString());
         }
     }
 }
