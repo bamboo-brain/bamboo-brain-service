@@ -1,19 +1,20 @@
 ﻿using Azure.Storage.Blobs;
 using Azure.Storage.Sas;
 using Azure;
-using Azure.AI.Inference;
 using BambooBrain_Service.Models;
 using BambooBrain_Service.Repositories.Documents;
 using BambooBrain_Service.Services.BlobStorage;
 using OpenAI.Chat;
 using System.Text.Json;
 using System.Text;
+using System.Xml;
+using Azure.AI.OpenAI;
 
 namespace BambooBrain_Service.Services.Extraction
 {
     public class AudioExtractionService
     {
-        private readonly ChatCompletionsClient _aiClient;
+        private readonly AzureOpenAIClient _aiClient;
         private readonly IDocumentRepository _documents;
         private readonly IBlobStorageService _blob;
         private readonly IConfiguration _config;
@@ -39,9 +40,10 @@ namespace BambooBrain_Service.Services.Extraction
             _httpClient.DefaultRequestHeaders.Add(
                 "Ocp-Apim-Subscription-Key", config["AzureSpeech:ApiKey"]);
 
-            _aiClient = new ChatCompletionsClient(
+            _aiClient = new AzureOpenAIClient(
                 new Uri(config["AzureOpenAI:Endpoint"]!),
-                new AzureKeyCredential(config["AzureOpenAI:ApiKey"]!)
+                new AzureKeyCredential(config["AzureOpenAI:ApiKey"]!),
+                new AzureOpenAIClientOptions(AzureOpenAIClientOptions.ServiceVersion.V2024_10_21)
             );
         }
 
@@ -125,7 +127,7 @@ namespace BambooBrain_Service.Services.Extraction
                 BlobContainerName = containerName,
                 BlobName = blobPath,
                 Resource = "b",
-                ExpiresOn = DateTimeOffset.UtcNow.AddHours(2)
+                ExpiresOn = DateTimeOffset.UtcNow.AddHours(6)
             };
             sasBuilder.SetPermissions(BlobSasPermissions.Read);
 
@@ -237,6 +239,8 @@ namespace BambooBrain_Service.Services.Extraction
             var transcriptFile = files?.Values?
                 .FirstOrDefault(f => f.Kind == "Transcription");
 
+            _logger.LogInformation("Transcript URL: {Url}", transcriptFile.Links.ContentUrl);
+
             if (transcriptFile?.Links?.ContentUrl == null)
             {
                 _logger.LogError("No transcript file found");
@@ -244,8 +248,16 @@ namespace BambooBrain_Service.Services.Extraction
             }
 
             // Download the actual transcript JSON
-            var transcriptResponse = await _httpClient.GetAsync(
-                transcriptFile.Links.ContentUrl);
+            var transcriptResponse = new HttpResponseMessage();
+            for (int i = 0; i < 3; i++)
+            {
+                transcriptResponse = await _httpClient.GetAsync(transcriptFile.Links.ContentUrl);
+                if (response.IsSuccessStatusCode)
+                    break;
+
+                await Task.Delay(2000);
+            }
+
             var transcriptBody = await transcriptResponse.Content.ReadAsStringAsync();
 
             var transcript = JsonSerializer.Deserialize<TranscriptContent>(transcriptBody,
@@ -262,16 +274,19 @@ namespace BambooBrain_Service.Services.Extraction
                     sb.AppendLine(phrase.Display);
                 }
             }
+            if (transcript?.CombinedRecognizedPhrases == null)
+            {
+                _logger.LogError("No phrases found in transcript");
+                return null;
+            }
 
             if (transcript?.RecognizedPhrases != null && transcript.RecognizedPhrases.Any())
             {
                 var lastPhrase = transcript.RecognizedPhrases.Last();
                 // Parse duration from ISO 8601 format e.g. "PT1M30.5S"
-                if (TimeSpan.TryParse(lastPhrase.Offset, out var offset) &&
-                    TimeSpan.TryParse(lastPhrase.Duration, out var duration))
-                {
-                    totalDuration = offset + duration;
-                }
+                var offset = XmlConvert.ToTimeSpan(lastPhrase.Offset);
+                var duration = XmlConvert.ToTimeSpan(lastPhrase.Duration);
+                totalDuration = offset + duration;
             }
 
             return new TranscriptResult
@@ -303,14 +318,7 @@ namespace BambooBrain_Service.Services.Extraction
         {
             var textSample = rawText.Length > 8000 ? rawText[..8000] : rawText;
 
-            var requestOptions = new ChatCompletionsOptions
-            {
-                Model = _config["AzureOpenAI:DeploymentName"],
-                Messages =
-            {
-                new ChatRequestSystemMessage(
-                    "You are a Chinese language expert. Always respond with valid JSON only."),
-                new ChatRequestUserMessage($$"""
+            var prompt = $$"""
                     Extract all unique Chinese vocabulary words from the text below.
                     For each word: word (Chinese chars), pinyin (tone marks), meaning (English), hskLevel (1-6 or null), frequency (count).
                     Return ONLY a JSON array. No markdown.
@@ -318,14 +326,24 @@ namespace BambooBrain_Service.Services.Extraction
                     If no Chinese: []
                     
                     TEXT: {{textSample}}
-                    """)
-            },
-                MaxTokens = 4000,
-                Temperature = 0.1f
-            };
+                    """;
 
-            var response = await _aiClient.CompleteAsync(requestOptions);
-            var content = response.Value.Content
+            var chatClient = _aiClient.GetChatClient(_config["AzureOpenAI:DeploymentName"]!);
+
+            var response = await chatClient.CompleteChatAsync(
+                new List<ChatMessage>
+                {
+                    new SystemChatMessage("You are a Chinese language expert. Always respond with valid JSON only."),
+                    new UserChatMessage(prompt)
+                        },
+                        new ChatCompletionOptions
+                        {
+                            MaxOutputTokenCount = 4000,
+                            Temperature = 0.1f
+                        }
+            );
+
+            var content = response.Value.Content[0].Text
                 .Replace("```json", "").Replace("```", "").Trim();
 
             try
@@ -344,26 +362,29 @@ namespace BambooBrain_Service.Services.Extraction
         {
             var textSample = rawText.Length > 3000 ? rawText[..3000] : rawText;
 
-            var requestOptions = new ChatCompletionsOptions
-            {
-                Model = _config["AzureOpenAI:DeploymentName"],
-                Messages =
-            {
-                new ChatRequestSystemMessage(
-                    "You are a helpful assistant. Always respond with valid JSON only."),
-                new ChatRequestUserMessage($$"""
+            var prompt = $$"""
                     Generate 3-6 topic tags in English for this Chinese text.
                     Return ONLY a JSON array. Example: ["travel","culture","Beijing"]
                     
                     TEXT: {{textSample}}
-                    """)
-            },
-                MaxTokens = 200,
-                Temperature = 0.3f
-            };
+                    """;
 
-            var response = await _aiClient.CompleteAsync(requestOptions);
-            var content = response.Value.Content
+            var chatClient = _aiClient.GetChatClient(_config["AzureOpenAI:DeploymentName"]!);
+
+            var response = await chatClient.CompleteChatAsync(
+                new List<ChatMessage>
+                {
+                    new SystemChatMessage("You are a helpful assistant. Always respond with valid JSON only."),
+                    new UserChatMessage(prompt)
+                        },
+                        new ChatCompletionOptions
+                        {
+                            MaxOutputTokenCount = 200,
+                            Temperature = 0.3f
+                        }
+            );
+
+            var content = response.Value.Content[0].Text
                 .Replace("```json", "").Replace("```", "").Trim();
 
             try { return JsonSerializer.Deserialize<List<string>>(content) ?? new(); }
