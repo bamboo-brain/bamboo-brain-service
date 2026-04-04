@@ -11,6 +11,7 @@ namespace BambooBrain_Service.Repositories.Documents
             int pageSize,
             string? continuationToken,
             string? fileTypeFilter,
+            int? hskLevelFilter,
             string? searchQuery);
         Task<Document> UpdateAsync(Document document);
         Task DeleteAsync(string id, string userId);
