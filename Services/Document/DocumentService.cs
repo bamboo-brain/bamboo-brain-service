@@ -84,10 +84,11 @@ namespace BambooBrain_Service.Services.Document
             int pageSize = 10,
             string? continuationToken = null,
             string? fileTypeFilter = null,
+            int? hskLevelFilter = null,
             string? searchQuery = null)
         {
             return await _documents.GetByUserIdAsync(
-                userId, pageSize, continuationToken, fileTypeFilter, searchQuery);
+                userId, pageSize, continuationToken, fileTypeFilter, hskLevelFilter, searchQuery);
         }
 
         public async Task<Models.Document?> GetDocumentAsync(string id, string userId)

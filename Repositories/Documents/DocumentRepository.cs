@@ -41,6 +41,7 @@ namespace BambooBrain_Service.Repositories.Documents
             int pageSize,
             string? continuationToken,
             string? fileTypeFilter,
+            int? hskLevelFilter,
             string? searchQuery)
         {
             // Build dynamic query based on filters
@@ -48,6 +49,9 @@ namespace BambooBrain_Service.Repositories.Documents
 
             if (!string.IsNullOrEmpty(fileTypeFilter) && fileTypeFilter != "all")
                 queryText += " AND c.fileType = @fileType";
+
+            if (hskLevelFilter.HasValue)
+                queryText += " AND c.hskLevel = @hskLevel";
 
             if (!string.IsNullOrEmpty(searchQuery))
                 queryText += " AND (CONTAINS(LOWER(c.fileName), @search) OR ARRAY_CONTAINS(c.tags, @search))";

@@ -50,6 +50,7 @@ namespace BambooBrain_Service.Controllers
             [FromQuery] int pageSize = 10,
             [FromQuery] string? continuationToken = null,
             [FromQuery] string? fileType = null,      // "pdf" | "video" | "audio" | "ppt" | "all"
+            [FromQuery] int? hskLevel = null,          // 1-6
             [FromQuery] string? search = null)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -59,7 +60,7 @@ namespace BambooBrain_Service.Controllers
                 return BadRequest(new { message = "pageSize must be between 1 and 50." });
 
             var (items, nextToken, totalCount) = await _documentService.GetUserDocumentsAsync(
-                userId, pageSize, continuationToken, fileType, search);
+                userId, pageSize, continuationToken, fileType, hskLevel, search);
 
             return Ok(new
             {
