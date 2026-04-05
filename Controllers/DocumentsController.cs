@@ -134,5 +134,23 @@ namespace BambooBrain_Service.Controllers
 
             return Ok(new { url = sasUrl, expiresIn = 3600 });
         }
+
+        [HttpGet("{id}/video-url")]
+        public async Task<IActionResult> GetVideoUrl(string id)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userId == null) return Unauthorized();
+
+            var document = await _documentService.GetDocumentAsync(id, userId);
+            if (document == null) return NotFound();
+
+            if (document.FileType != "video")
+                return BadRequest(new { message = "Document is not a video file." });
+
+            var sasUrl = await _blobStorage.GenerateSasUrlAsync(
+                document.BlobPath, "videos", expiryMinutes: 60);
+
+            return Ok(new { url = sasUrl, expiresIn = 3600 });
+        }
     }
 }

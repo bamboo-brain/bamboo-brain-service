@@ -12,6 +12,7 @@ namespace BambooBrain_Service.Services.Document
         private readonly IConfiguration _config;
         private readonly IExtractionService _documentExtraction;
         private readonly AudioExtractionService _audioExtraction;
+        private readonly VideoExtractionService _videoExtraction;
         private readonly ILogger<AudioExtractionService> _logger;
 
         private static readonly Dictionary<string, (string fileType, string container)> _mimeMap = new()
@@ -34,6 +35,7 @@ namespace BambooBrain_Service.Services.Document
             IBlobStorageService blob,
             IExtractionService documentExtraction,
             AudioExtractionService audioExtraction,
+            VideoExtractionService videoExtraction,
             ILogger<AudioExtractionService> logger,
             IConfiguration config)
         {
@@ -41,6 +43,7 @@ namespace BambooBrain_Service.Services.Document
             _blob = blob;
             _documentExtraction = documentExtraction;
             _audioExtraction = audioExtraction;
+            _videoExtraction = videoExtraction;
             _logger = logger;
             _config = config;
         }
@@ -110,22 +113,35 @@ namespace BambooBrain_Service.Services.Document
 
         private async Task TriggerExtractionAsync(Models.Document document)
         {
-            _logger.LogInformation("Triggering extraction for {Id}, type: {Type}",
-                document.Id, document.FileType);  // ← add this log
-
-            switch (document.FileType)
+            _ = Task.Run(async () =>
             {
-                case "pdf":
-                case "ppt":
-                    _ = Task.Run(() => _documentExtraction.ExtractAsync(document));
-                    break;
-                case "audio":
-                    _ = Task.Run(() => _audioExtraction.ExtractAsync(document));
-                    break;
-                default:
-                    _logger.LogWarning("No extraction handler for type: {Type}", document.FileType);
-                    break;
-            }
+                try
+                {
+                    switch (document.FileType)
+                    {
+                        case "pdf":
+                        case "ppt":
+                            await _documentExtraction.ExtractAsync(document);
+                            break;
+                        case "audio":
+                            await _audioExtraction.ExtractAsync(document);
+                            break;
+                        case "video":                                    // ← add
+                            await _videoExtraction.ExtractAsync(document);
+                            break;
+                        default:
+                            _logger.LogWarning("No handler for: {Type}", document.FileType);
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Extraction error for {Id}", document.Id);
+                    document.ExtractionStatus = "failed";
+                    document.UpdatedAt = DateTime.UtcNow;
+                    await _documents.UpdateAsync(document);
+                }
+            });
         }
     }
 }

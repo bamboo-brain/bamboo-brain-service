@@ -105,15 +105,14 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-// Add HttpClient factory
 builder.Services.AddHttpClient("SpeechApi");
-
-// Register audio extraction service
 builder.Services.AddScoped<AudioExtractionService>();
+
+builder.Services.AddHttpClient("VideoIndexer");
+builder.Services.AddScoped<VideoExtractionService>();
 
 var app = builder.Build();
 
-// ↓ ADD THIS BLOCK
 if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
 {
     app.UseSwagger();
