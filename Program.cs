@@ -11,6 +11,8 @@ using BambooBrain_Service.Services.Document;
 using BambooBrain_Service.Services.Extraction;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.OpenApi.Models;
+using BambooBrain_Service.Repositories.Flashcards;
+using BambooBrain_Service.Services.Flashcard;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -110,6 +112,9 @@ builder.Services.AddScoped<AudioExtractionService>();
 
 builder.Services.AddHttpClient("VideoIndexer");
 builder.Services.AddScoped<VideoExtractionService>();
+
+builder.Services.AddScoped<IFlashcardRepository, FlashcardRepository>();
+builder.Services.AddScoped<IFlashcardService, FlashcardService>();
 
 var app = builder.Build();
 
