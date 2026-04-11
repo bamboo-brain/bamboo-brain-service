@@ -22,6 +22,7 @@ using BambooBrain_Service.Repositories.Stats;
 using BambooBrain_Service.Services.Planner;
 using BambooBrain_Service.Repositories.Notifications;
 using BambooBrain_Service.Services.Notifications;
+using BambooBrain_Service.Services.Settings;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -68,6 +69,8 @@ builder.Services.AddSingleton<IBlobStorageService, BlobStorageService>();
 builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
 builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<IExtractionService, DocumentExtractionService>();
+
+builder.Services.AddScoped<ISettingsService, SettingsService>();
 
 // ↓ ADD THESE TWO LINES
 builder.Services.AddEndpointsApiExplorer();

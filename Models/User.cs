@@ -39,5 +39,11 @@ namespace BambooBrain_Service.Models
 
         [JsonProperty("isOnboardingComplete")]
         public bool IsOnboardingComplete { get; set; } = false;
+
+        [JsonProperty("bio")]
+        public string Bio { get; set; } = string.Empty;
+
+        [JsonProperty("passwordChangedAt")]
+        public DateTime? PasswordChangedAt { get; set; }
     }
 }
