@@ -21,21 +21,31 @@ namespace BambooBrain_Service.Services.Speaking
 
         // ── STT ────────────────────────────────────────────────────────────────
 
-        public async Task<SpeechRecognitionResult> RecognizeAsync(
-            string audioBase64, string mimeType)
+        public async Task<SpeechRecognitionResult> RecognizeAsync(string audioBase64, string mimeType)
         {
             try
             {
                 var audioBytes = Convert.FromBase64String(audioBase64);
 
+                // ← Choose correct codec based on MIME type
+                var (contentType, codecParam) = mimeType.ToLower() switch
+                {
+                    "audio/webm" or "audio/webm;codecs=opus" =>
+                        ("audio/webm;codecs=opus", "&format=detailed"),
+                    "audio/ogg" or "audio/ogg;codecs=opus" =>
+                        ("audio/ogg;codecs=opus", "&format=detailed"),
+                    _ =>
+                        ("audio/wav", "&format=detailed")
+                };
+
                 var url = $"https://{SpeechRegion}.stt.speech.microsoft.com/" +
-                          "speech/recognition/conversation/cognitiveservices/v1" +
-                          "?language=zh-CN&format=detailed";
+                          $"speech/recognition/conversation/cognitiveservices/v1" +
+                          $"?language=zh-CN{codecParam}";
 
                 using var httpClient = new HttpClient();
                 using var content = new ByteArrayContent(audioBytes);
                 content.Headers.ContentType =
-                    new System.Net.Http.Headers.MediaTypeHeaderValue("audio/wav");
+                    new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
 
                 var request = new HttpRequestMessage(HttpMethod.Post, url)
                 {
@@ -47,7 +57,7 @@ namespace BambooBrain_Service.Services.Speaking
                 var body = await response.Content.ReadAsStringAsync();
 
                 _logger.LogInformation("STT response: {Status} {Body}",
-                    response.StatusCode, body[..Math.Min(200, body.Length)]);
+                    response.StatusCode, body[..Math.Min(300, body.Length)]);
 
                 if (!response.IsSuccessStatusCode)
                     return new SpeechRecognitionResult
@@ -63,7 +73,8 @@ namespace BambooBrain_Service.Services.Speaking
                     });
 
                 if (result?.RecognitionStatus != "Success" ||
-                    result.NBest == null || !result.NBest.Any())
+                    result.NBest == null || !result.NBest.Any() ||
+                    string.IsNullOrWhiteSpace(result.NBest.First().Display))
                     return new SpeechRecognitionResult
                     {
                         Success = false,
