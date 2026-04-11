@@ -15,6 +15,8 @@ using BambooBrain_Service.Repositories.Flashcards;
 using BambooBrain_Service.Services.Flashcard;
 using BambooBrain_Service.Repositories.Quiz;
 using BambooBrain_Service.Services.Quiz;
+using BambooBrain_Service.Repositories.Speaking;
+using BambooBrain_Service.Services.Speaking;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -120,6 +122,11 @@ builder.Services.AddScoped<IFlashcardService, FlashcardService>();
 
 builder.Services.AddScoped<IQuizRepository, QuizRepository>();
 builder.Services.AddScoped<IQuizService, QuizService>();
+
+builder.Services.AddHttpClient("SpeechService");
+builder.Services.AddScoped<ISpeakingRepository, SpeakingRepository>();
+builder.Services.AddScoped<ISpeechService, SpeechService>();
+builder.Services.AddScoped<ISpeakingService, SpeakingService>();
 
 var app = builder.Build();
 
