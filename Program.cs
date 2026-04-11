@@ -13,6 +13,8 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.OpenApi.Models;
 using BambooBrain_Service.Repositories.Flashcards;
 using BambooBrain_Service.Services.Flashcard;
+using BambooBrain_Service.Repositories.Quiz;
+using BambooBrain_Service.Services.Quiz;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -115,6 +117,9 @@ builder.Services.AddScoped<VideoExtractionService>();
 
 builder.Services.AddScoped<IFlashcardRepository, FlashcardRepository>();
 builder.Services.AddScoped<IFlashcardService, FlashcardService>();
+
+builder.Services.AddScoped<IQuizRepository, QuizRepository>();
+builder.Services.AddScoped<IQuizService, QuizService>();
 
 var app = builder.Build();
 
