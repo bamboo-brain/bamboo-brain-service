@@ -87,6 +87,8 @@ namespace BambooBrain_Service.Services.Flashcard
 
             // Take most frequent words up to MaxCards limit
             var selectedWords = words
+                .GroupBy(w => w.Word.Trim())
+                .Select(g => g.OrderByDescending(w => w.Frequency).First())
                 .OrderByDescending(w => w.Frequency)
                 .Take(request.MaxCards ?? 50)
                 .ToList();
@@ -127,6 +129,11 @@ namespace BambooBrain_Service.Services.Flashcard
         {
             var deck = await _decks.GetByIdAsync(deckId, userId)
                 ?? throw new InvalidOperationException("Deck not found.");
+
+            var existingCard = deck.Cards.FirstOrDefault(c => c.Word.Trim() == request.Word.Trim());
+
+            if (existingCard != null)
+                throw new InvalidOperationException($"Word '{request.Word}' already exists in this deck.");
 
             var card = new Models.Flashcard
             {
@@ -259,7 +266,12 @@ namespace BambooBrain_Service.Services.Flashcard
                 }
             }
 
-            return flashcards;
+            var deduplicated = flashcards
+                .GroupBy(c => c.Word.Trim())
+                .Select(g => g.First())
+                .ToList();
+
+            return deduplicated;
         }
     }
 }
