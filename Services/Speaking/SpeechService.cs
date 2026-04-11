@@ -97,87 +97,85 @@ namespace BambooBrain_Service.Services.Speaking
         }
 
         // ── TTS ────────────────────────────────────────────────────────────────
-
-        public async Task<string> SynthesizeAsync(
-            string text, string userId, string sessionId)
+        public async Task<string> SynthesizeAsync(string text, string userId, string sessionId)
         {
-            try
+            _logger.LogInformation("[TTS] Starting. Region={Region} Text={Text}",
+                SpeechRegion, text);
+
+            var url = $"https://{SpeechRegion}.tts.speech.microsoft.com/cognitiveservices/v1";
+
+            var ssml = $"<speak version='1.0' xml:lang='zh-CN'>" +
+                       $"<voice name='zh-CN-XiaoxiaoNeural'>" +
+                       $"{System.Security.SecurityElement.Escape(text)}" +
+                       $"</voice></speak>";
+
+            _logger.LogInformation("[TTS] SSML: {Ssml}", ssml);
+
+            // ← Use ByteArrayContent so we control Content-Type exactly — no charset suffix
+            var ssmlBytes = System.Text.Encoding.UTF8.GetBytes(ssml);
+
+            using var httpClient = new HttpClient();
+            using var content = new ByteArrayContent(ssmlBytes);
+            content.Headers.TryAddWithoutValidation(
+                "Content-Type", "application/ssml+xml");
+
+            var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
-                _logger.LogInformation("TTS starting for text: {Text}", text);
+                Content = content
+            };
+            request.Headers.TryAddWithoutValidation(
+                "Ocp-Apim-Subscription-Key", SpeechKey);
+            request.Headers.TryAddWithoutValidation(
+                "X-Microsoft-OutputFormat", "audio-16khz-128kbitrate-mono-mp3");
+            request.Headers.TryAddWithoutValidation(
+                "User-Agent", "BambooBrain");
 
-                var url = $"https://{SpeechRegion}.tts.speech.microsoft.com/" +
-                          "cognitiveservices/v1";
+            _logger.LogInformation("[TTS] Sending request to {Url}", url);
+            var response = await httpClient.SendAsync(request);
 
-                var ssml = $"""
-                <speak version='1.0' xml:lang='zh-CN'>
-                  <voice name='zh-CN-XiaoxiaoNeural'>
-                    <prosody rate='0.9'>{System.Security.SecurityElement.Escape(text)}</prosody>
-                  </voice>
-                </speak>
-                """;
+            var responseBody = await response.Content.ReadAsStringAsync();
+            _logger.LogInformation("[TTS] Status: {Status} Body: {Body}",
+                response.StatusCode, responseBody);
 
-                using var httpClient = new HttpClient();
-                var request = new HttpRequestMessage(HttpMethod.Post, url)
-                {
-                    Content = new StringContent(
-                        ssml, System.Text.Encoding.UTF8, "application/ssml+xml")
-                };
-                request.Headers.Add("Ocp-Apim-Subscription-Key", SpeechKey);
-                request.Headers.Add("X-Microsoft-OutputFormat",
-                    "audio-16khz-128kbitrate-mono-mp3");
+            if (!response.IsSuccessStatusCode)
+                return string.Empty;
 
-                var response = await httpClient.SendAsync(request);
+            var audioBytes = response.Content.ReadAsByteArrayAsync().Result;
+            _logger.LogInformation("[TTS] Audio bytes: {Length}", audioBytes.Length);
 
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorBody = await response.Content.ReadAsStringAsync();
-                    _logger.LogError("TTS failed: {Status} {Body}",
-                        response.StatusCode, errorBody);
-                    return string.Empty;
-                }
-
-                var audioBytes = await response.Content.ReadAsByteArrayAsync();
-                _logger.LogInformation("TTS audio bytes: {Length}", audioBytes.Length);
-
-                // ← Same pattern as AudioExtractionService.GenerateSasUrlAsync
-                var blobServiceClient = new BlobServiceClient(BlobConnectionString);
-                var containerClient = blobServiceClient
-                    .GetBlobContainerClient("speaking-audio");
-
-                // Create container if it doesn't exist
-                await containerClient.CreateIfNotExistsAsync();
-
-                var blobName = $"{userId}/{sessionId}/{Guid.NewGuid()}.mp3";
-                var blobClient = containerClient.GetBlobClient(blobName);
-
-                using var stream = new MemoryStream(audioBytes);
-                await blobClient.UploadAsync(stream, new BlobHttpHeaders
-                {
-                    ContentType = "audio/mpeg"
-                });
-
-                _logger.LogInformation("TTS uploaded to blob: {BlobName}", blobName);
-
-                // ← Same SAS pattern as AudioExtractionService
-                var sasBuilder = new BlobSasBuilder
-                {
-                    BlobContainerName = "speaking-audio",
-                    BlobName = blobName,
-                    Resource = "b",
-                    ExpiresOn = DateTimeOffset.UtcNow.AddHours(2)
-                };
-                sasBuilder.SetPermissions(BlobSasPermissions.Read);
-
-                var sasUrl = blobClient.GenerateSasUri(sasBuilder).ToString();
-                _logger.LogInformation("TTS SAS URL generated successfully");
-
-                return sasUrl;
-            }
-            catch (Exception ex)
+            if (audioBytes.Length == 0)
             {
-                _logger.LogError(ex, "TTS exception");
+                _logger.LogError("[TTS] Empty audio response");
                 return string.Empty;
             }
+
+            // Upload to blob
+            var blobServiceClient = new BlobServiceClient(BlobConnectionString);
+            var containerClient = blobServiceClient.GetBlobContainerClient("speaking-audio");
+            await containerClient.CreateIfNotExistsAsync();
+
+            var blobName = $"{userId}/{sessionId}/{Guid.NewGuid()}.mp3";
+            var blobClient = containerClient.GetBlobClient(blobName);
+
+            using var stream = new MemoryStream(audioBytes);
+            await blobClient.UploadAsync(stream, new BlobHttpHeaders
+            {
+                ContentType = "audio/mpeg"
+            });
+
+            var sasBuilder = new BlobSasBuilder
+            {
+                BlobContainerName = "speaking-audio",
+                BlobName = blobName,
+                Resource = "b",
+                ExpiresOn = DateTimeOffset.UtcNow.AddHours(2)
+            };
+            sasBuilder.SetPermissions(BlobSasPermissions.Read);
+
+            var sasUrl = blobClient.GenerateSasUri(sasBuilder).ToString();
+            _logger.LogInformation("[TTS] Done. URL starts: {Start}", sasUrl[..60]);
+
+            return sasUrl;
         }
     }
 
