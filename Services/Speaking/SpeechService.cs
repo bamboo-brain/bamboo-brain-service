@@ -7,25 +7,19 @@ namespace BambooBrain_Service.Services.Speaking
     public class SpeechService : ISpeechService
     {
         private readonly IConfiguration _config;
-        private readonly HttpClient _httpClient;
-        private readonly BlobServiceClient _blobClient;
         private readonly ILogger<SpeechService> _logger;
 
         private string SpeechRegion => _config["AzureSpeech:Region"]!;
         private string SpeechKey => _config["AzureSpeech:ApiKey"]!;
+        private string BlobConnectionString => _config["BlobStorage:ConnectionString"]!;
 
-        public SpeechService(
-            IConfiguration config,
-            IHttpClientFactory httpClientFactory,
-            ILogger<SpeechService> logger)
+        public SpeechService(IConfiguration config, ILogger<SpeechService> logger)
         {
             _config = config;
             _logger = logger;
-            _httpClient = httpClientFactory.CreateClient("SpeechService");
-            _blobClient = new BlobServiceClient(config["BlobStorage:ConnectionString"]);
         }
 
-        // ── STT: Recognize Chinese speech ─────────────────────────────────────
+        // ── STT ────────────────────────────────────────────────────────────────
 
         public async Task<SpeechRecognitionResult> RecognizeAsync(
             string audioBase64, string mimeType)
@@ -34,94 +28,75 @@ namespace BambooBrain_Service.Services.Speaking
             {
                 var audioBytes = Convert.FromBase64String(audioBase64);
 
-                // Save temp WAV file
-                var tempPath = Path.Combine(
-                    Path.GetTempPath(), $"{Guid.NewGuid()}.wav");
+                var url = $"https://{SpeechRegion}.stt.speech.microsoft.com/" +
+                          "speech/recognition/conversation/cognitiveservices/v1" +
+                          "?language=zh-CN&format=detailed";
 
-                await File.WriteAllBytesAsync(tempPath, audioBytes);
+                using var httpClient = new HttpClient();
+                using var content = new ByteArrayContent(audioBytes);
+                content.Headers.ContentType =
+                    new System.Net.Http.Headers.MediaTypeHeaderValue("audio/wav");
 
-                try
+                var request = new HttpRequestMessage(HttpMethod.Post, url)
                 {
-                    // Call Azure Speech REST API
-                    var url = $"https://{SpeechRegion}.stt.speech.microsoft.com/" +
-                              "speech/recognition/conversation/cognitiveservices/v1" +
-                              "?language=zh-CN&format=detailed";
+                    Content = content
+                };
+                request.Headers.Add("Ocp-Apim-Subscription-Key", SpeechKey);
 
-                    using var content = new ByteArrayContent(audioBytes);
-                    content.Headers.ContentType =
-                        new System.Net.Http.Headers.MediaTypeHeaderValue("audio/wav");
+                var response = await httpClient.SendAsync(request);
+                var body = await response.Content.ReadAsStringAsync();
 
-                    var request = new HttpRequestMessage(HttpMethod.Post, url)
-                    {
-                        Content = content
-                    };
-                    request.Headers.Add("Ocp-Apim-Subscription-Key", SpeechKey);
+                _logger.LogInformation("STT response: {Status} {Body}",
+                    response.StatusCode, body[..Math.Min(200, body.Length)]);
 
-                    var response = await _httpClient.SendAsync(request);
-                    var body = await response.Content.ReadAsStringAsync();
-
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        _logger.LogError("STT failed: {Body}", body);
-                        return new SpeechRecognitionResult
-                        {
-                            Success = false,
-                            Error = $"Speech recognition failed: {response.StatusCode}"
-                        };
-                    }
-
-                    var result = System.Text.Json.JsonSerializer.Deserialize<SttResponse>(
-                        body, new System.Text.Json.JsonSerializerOptions
-                        {
-                            PropertyNameCaseInsensitive = true
-                        });
-
-                    if (result?.RecognitionStatus != "Success" ||
-                        result.NBest == null || !result.NBest.Any())
-                    {
-                        return new SpeechRecognitionResult
-                        {
-                            Success = false,
-                            Error = "No speech recognized"
-                        };
-                    }
-
-                    var best = result.NBest.First();
-
+                if (!response.IsSuccessStatusCode)
                     return new SpeechRecognitionResult
                     {
-                        Success = true,
-                        Text = best.Display ?? best.Lexical ?? string.Empty,
-                        AccuracyScore = best.Confidence * 100
+                        Success = false,
+                        Error = $"STT failed: {response.StatusCode} {body}"
                     };
-                }
-                finally
+
+                var result = System.Text.Json.JsonSerializer.Deserialize<SttResponse>(
+                    body, new System.Text.Json.JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+
+                if (result?.RecognitionStatus != "Success" ||
+                    result.NBest == null || !result.NBest.Any())
+                    return new SpeechRecognitionResult
+                    {
+                        Success = false,
+                        Error = $"No speech recognized. Status: {result?.RecognitionStatus}"
+                    };
+
+                var best = result.NBest.First();
+                return new SpeechRecognitionResult
                 {
-                    if (File.Exists(tempPath)) File.Delete(tempPath);
-                }
+                    Success = true,
+                    Text = best.Display ?? best.Lexical ?? string.Empty,
+                    AccuracyScore = best.Confidence * 100
+                };
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "STT exception");
-                return new SpeechRecognitionResult
-                {
-                    Success = false,
-                    Error = ex.Message
-                };
+                return new SpeechRecognitionResult { Success = false, Error = ex.Message };
             }
         }
 
-        // ── TTS: Synthesize AI response to audio ──────────────────────────────
+        // ── TTS ────────────────────────────────────────────────────────────────
 
         public async Task<string> SynthesizeAsync(
             string text, string userId, string sessionId)
         {
             try
             {
+                _logger.LogInformation("TTS starting for text: {Text}", text);
+
                 var url = $"https://{SpeechRegion}.tts.speech.microsoft.com/" +
                           "cognitiveservices/v1";
 
-                // Use female Chinese neural voice for Master Ling AI
                 var ssml = $"""
                 <speak version='1.0' xml:lang='zh-CN'>
                   <voice name='zh-CN-XiaoxiaoNeural'>
@@ -130,38 +105,49 @@ namespace BambooBrain_Service.Services.Speaking
                 </speak>
                 """;
 
+                using var httpClient = new HttpClient();
                 var request = new HttpRequestMessage(HttpMethod.Post, url)
                 {
                     Content = new StringContent(
                         ssml, System.Text.Encoding.UTF8, "application/ssml+xml")
                 };
                 request.Headers.Add("Ocp-Apim-Subscription-Key", SpeechKey);
-                request.Headers.Add("X-Microsoft-OutputFormat", "audio-16khz-128kbitrate-mono-mp3");
+                request.Headers.Add("X-Microsoft-OutputFormat",
+                    "audio-16khz-128kbitrate-mono-mp3");
 
-                var response = await _httpClient.SendAsync(request);
+                var response = await httpClient.SendAsync(request);
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.LogError("TTS failed: {Status}", response.StatusCode);
+                    var errorBody = await response.Content.ReadAsStringAsync();
+                    _logger.LogError("TTS failed: {Status} {Body}",
+                        response.StatusCode, errorBody);
                     return string.Empty;
                 }
 
                 var audioBytes = await response.Content.ReadAsByteArrayAsync();
+                _logger.LogInformation("TTS audio bytes: {Length}", audioBytes.Length);
 
-                // Upload to blob storage
-                var containerClient = _blobClient.GetBlobContainerClient("speaking-audio");
+                // ← Same pattern as AudioExtractionService.GenerateSasUrlAsync
+                var blobServiceClient = new BlobServiceClient(BlobConnectionString);
+                var containerClient = blobServiceClient
+                    .GetBlobContainerClient("speaking-audio");
+
+                // Create container if it doesn't exist
                 await containerClient.CreateIfNotExistsAsync();
 
                 var blobName = $"{userId}/{sessionId}/{Guid.NewGuid()}.mp3";
-                var blobBlobClient = containerClient.GetBlobClient(blobName);
+                var blobClient = containerClient.GetBlobClient(blobName);
 
                 using var stream = new MemoryStream(audioBytes);
-                await blobBlobClient.UploadAsync(stream, new BlobHttpHeaders
+                await blobClient.UploadAsync(stream, new BlobHttpHeaders
                 {
                     ContentType = "audio/mpeg"
                 });
 
-                // Return SAS URL (valid 2 hours)
+                _logger.LogInformation("TTS uploaded to blob: {BlobName}", blobName);
+
+                // ← Same SAS pattern as AudioExtractionService
                 var sasBuilder = new BlobSasBuilder
                 {
                     BlobContainerName = "speaking-audio",
@@ -171,7 +157,10 @@ namespace BambooBrain_Service.Services.Speaking
                 };
                 sasBuilder.SetPermissions(BlobSasPermissions.Read);
 
-                return blobBlobClient.GenerateSasUri(sasBuilder).ToString();
+                var sasUrl = blobClient.GenerateSasUri(sasBuilder).ToString();
+                _logger.LogInformation("TTS SAS URL generated successfully");
+
+                return sasUrl;
             }
             catch (Exception ex)
             {

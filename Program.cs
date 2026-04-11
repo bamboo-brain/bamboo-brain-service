@@ -123,7 +123,6 @@ builder.Services.AddScoped<IFlashcardService, FlashcardService>();
 builder.Services.AddScoped<IQuizRepository, QuizRepository>();
 builder.Services.AddScoped<IQuizService, QuizService>();
 
-builder.Services.AddHttpClient("SpeechService");
 builder.Services.AddScoped<ISpeakingRepository, SpeakingRepository>();
 builder.Services.AddScoped<ISpeechService, SpeechService>();
 builder.Services.AddScoped<ISpeakingService, SpeakingService>();
