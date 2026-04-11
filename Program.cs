@@ -17,6 +17,9 @@ using BambooBrain_Service.Repositories.Quiz;
 using BambooBrain_Service.Services.Quiz;
 using BambooBrain_Service.Repositories.Speaking;
 using BambooBrain_Service.Services.Speaking;
+using BambooBrain_Service.Repositories.Planner;
+using BambooBrain_Service.Repositories.Stats;
+using BambooBrain_Service.Services.Planner;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -126,6 +129,13 @@ builder.Services.AddScoped<IQuizService, QuizService>();
 builder.Services.AddScoped<ISpeakingRepository, SpeakingRepository>();
 builder.Services.AddScoped<ISpeechService, SpeechService>();
 builder.Services.AddScoped<ISpeakingService, SpeakingService>();
+
+builder.Services.AddScoped<IPlannerRepository, PlannerRepository>();
+builder.Services.AddScoped<IStatsRepository, StatsRepository>();
+builder.Services.AddScoped<GoalAgent>();
+builder.Services.AddScoped<MonitorAgent>();
+builder.Services.AddScoped<AdaptAgent>();
+builder.Services.AddScoped<IPlannerService, PlannerService>();
 
 var app = builder.Build();
 
