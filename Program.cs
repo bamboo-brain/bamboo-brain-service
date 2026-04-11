@@ -20,6 +20,8 @@ using BambooBrain_Service.Services.Speaking;
 using BambooBrain_Service.Repositories.Planner;
 using BambooBrain_Service.Repositories.Stats;
 using BambooBrain_Service.Services.Planner;
+using BambooBrain_Service.Repositories.Notifications;
+using BambooBrain_Service.Services.Notifications;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -55,7 +57,8 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend", policy =>
         policy.WithOrigins("http://localhost:3000", "https://bamboo-brain-pavilion.vercel.app", "https://bamboo-brain-pavilion-guayavazezacgdhr.southeastasia-01.azurewebsites.net")
               .AllowAnyHeader()
-              .AllowAnyMethod());
+              .AllowAnyMethod()
+              .AllowCredentials());
 });
 
 // Blob Storage
@@ -136,6 +139,9 @@ builder.Services.AddScoped<GoalAgent>();
 builder.Services.AddScoped<MonitorAgent>();
 builder.Services.AddScoped<AdaptAgent>();
 builder.Services.AddScoped<IPlannerService, PlannerService>();
+
+builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
 
 var app = builder.Build();
 

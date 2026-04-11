@@ -1,6 +1,7 @@
 ﻿using BambooBrain_Service.Models;
 using BambooBrain_Service.Repositories.Planner;
 using BambooBrain_Service.Repositories.Stats;
+using BambooBrain_Service.Services.Notifications;
 
 namespace BambooBrain_Service.Services.Planner
 {
@@ -8,6 +9,7 @@ namespace BambooBrain_Service.Services.Planner
     {
         private readonly IPlannerRepository _plans;
         private readonly IStatsRepository _stats;
+        private readonly INotificationService _notifications;
         private readonly GoalAgent _goalAgent;
         private readonly MonitorAgent _monitorAgent;
         private readonly AdaptAgent _adaptAgent;
@@ -16,6 +18,7 @@ namespace BambooBrain_Service.Services.Planner
         public PlannerService(
             IPlannerRepository plans,
             IStatsRepository stats,
+            INotificationService notification,
             GoalAgent goalAgent,
             MonitorAgent monitorAgent,
             AdaptAgent adaptAgent,
@@ -23,6 +26,7 @@ namespace BambooBrain_Service.Services.Planner
         {
             _plans = plans;
             _stats = stats;
+            _notifications = notification;
             _goalAgent = goalAgent;
             _monitorAgent = monitorAgent;
             _adaptAgent = adaptAgent;
@@ -125,7 +129,15 @@ namespace BambooBrain_Service.Services.Planner
             plan.LastAdaptedAt = DateTime.UtcNow;
             plan.NextAdaptationDue = DateTime.UtcNow.AddDays(7);
 
-            return await _plans.UpdateAsync(plan);
+            var updatedPlan = await _plans.UpdateAsync(plan);
+
+            await _notifications.SendPlanAdaptationAsync(
+                userId,
+                plan.Id,
+                analysis.StudentMessage
+            );
+
+            return updatedPlan;
         }
 
         // ── Event management ───────────────────────────────────────────────────
@@ -288,6 +300,15 @@ namespace BambooBrain_Service.Services.Planner
                 .ToList();
 
             await _stats.UpdateAsync(stats);
+
+            if (stats.CurrentStreak is 3 or 7 or 14 or 30 or 60 or 100)
+            {
+                await _notifications.SendAchievementAsync(
+                    userId,
+                    $"{stats.CurrentStreak}-Day Streak",
+                    $"You've completed your {stats.CurrentStreak}-day streak! Keep up the momentum."
+                );
+            }
         }
 
         public async Task<UserStats> GetStatsAsync(string userId)

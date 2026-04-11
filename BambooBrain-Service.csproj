@@ -16,6 +16,8 @@
     <PackageReference Include="BCrypt.Net-Next" Version="4.1.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
     <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.58.0" />
+    <PackageReference Include="Microsoft.Azure.SignalR" Version="1.30.2" />
+    <PackageReference Include="Microsoft.Azure.SignalR.Management" Version="1.30.2" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="OpenAI" Version="2.1.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />

@@ -2,6 +2,7 @@
 using BambooBrain_Service.Repositories.Documents;
 using BambooBrain_Service.Services.BlobStorage;
 using BambooBrain_Service.Services.Extraction;
+using BambooBrain_Service.Services.Notifications;
 
 namespace BambooBrain_Service.Services.Document
 {
@@ -11,6 +12,7 @@ namespace BambooBrain_Service.Services.Document
         private readonly IBlobStorageService _blob;
         private readonly IConfiguration _config;
         private readonly IExtractionService _documentExtraction;
+        private readonly INotificationService _notifications;
         private readonly AudioExtractionService _audioExtraction;
         private readonly VideoExtractionService _videoExtraction;
         private readonly ILogger<AudioExtractionService> _logger;
@@ -34,6 +36,7 @@ namespace BambooBrain_Service.Services.Document
             IDocumentRepository documents,
             IBlobStorageService blob,
             IExtractionService documentExtraction,
+            INotificationService notifications,
             AudioExtractionService audioExtraction,
             VideoExtractionService videoExtraction,
             ILogger<AudioExtractionService> logger,
@@ -44,6 +47,7 @@ namespace BambooBrain_Service.Services.Document
             _documentExtraction = documentExtraction;
             _audioExtraction = audioExtraction;
             _videoExtraction = videoExtraction;
+            _notifications = notifications;
             _logger = logger;
             _config = config;
         }
@@ -133,6 +137,12 @@ namespace BambooBrain_Service.Services.Document
                             _logger.LogWarning("No handler for: {Type}", document.FileType);
                             break;
                     }
+
+                    await _notifications.SendProcessingCompleteAsync(
+                        document.UserId,
+                        document.Id,
+                        document.FileName
+                    );
                 }
                 catch (Exception ex)
                 {
