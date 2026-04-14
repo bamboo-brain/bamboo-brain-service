@@ -51,12 +51,19 @@ namespace BambooBrain_Service.Services.Search
                 "Indexing complete for document {Id}", document.Id);
         }
 
+        private static string SanitizeKey(string key)
+        {
+            // Replace any character that's not letter, digit, _, -, or =
+            return System.Text.RegularExpressions.Regex.Replace(key, @"[^a-zA-Z0-9_\-=]", "_");
+        }
+
         private async Task IndexWordsAsync(Models.Document document)
         {
             if (!document.ExtractedWords.Any()) return;
 
             // Deduplicate words
             var uniqueWords = document.ExtractedWords
+                .Where(w => !string.IsNullOrWhiteSpace(w.Word))
                 .GroupBy(w => w.Word)
                 .Select(g => g.OrderByDescending(w => w.Frequency).First())
                 .ToList();
@@ -68,7 +75,7 @@ namespace BambooBrain_Service.Services.Search
 
             var searchDocs = uniqueWords.Select((word, i) => new WordSearchDocument
             {
-                Id = $"{document.UserId}_{document.Id}_{word.Word}",
+                Id = SanitizeKey($"{document.UserId}_{document.Id}_{word.Word}_{i}"),
                 UserId = document.UserId,
                 DocumentId = document.Id,
                 Word = word.Word,
@@ -103,7 +110,7 @@ namespace BambooBrain_Service.Services.Search
 
             var searchDocs = chunks.Select((chunk, i) => new ChunkSearchDocument
             {
-                Id = $"{document.UserId}_{document.Id}_chunk_{i}",
+                Id = SanitizeKey($"{document.UserId}_{document.Id}_chunk_{i}"),
                 UserId = document.UserId,
                 DocumentId = document.Id,
                 DocumentTitle = document.FileName,
@@ -263,20 +270,29 @@ namespace BambooBrain_Service.Services.Search
         // ── RAG chunk search ───────────────────────────────────────────────────
 
         public async Task<RagResult> SearchChunksForRagAsync(
-            string userId, string query, int topChunks = 5)
+            string userId, string query, int topChunks = 5, string? documentTitleHint = null)
         {
             var queryVector = await _embeddings.GetEmbeddingAsync(query);
 
+            // If a specific document is mentioned, filter to it
+            var filter = $"userId eq '{userId}'";
+            if (!string.IsNullOrEmpty(documentTitleHint))
+            {
+                // Strip extension for partial match
+                var titleWithoutExt = Path.GetFileNameWithoutExtension(documentTitleHint);
+                filter += $" and search.ismatch('{titleWithoutExt}', 'documentTitle')";
+            }
+
             var options = new SearchOptions
             {
-                Filter = $"userId eq '{userId}'",
+                Filter = filter,
                 Size = topChunks,
                 Select = { "documentId", "documentTitle", "content", "chunkIndex" },
                 QueryType = SearchQueryType.Semantic,
                 SemanticSearch = new SemanticSearchOptions
                 {
                     SemanticConfigurationName = "semantic-config",
-                    SemanticQuery = query
+                    QueryCaption = new QueryCaption(QueryCaptionType.Extractive)
                 }
             };
 

@@ -1,4 +1,5 @@
-﻿using BambooBrain_Service.Services.Search;
+﻿using BambooBrain_Service.Repositories.Documents;
+using BambooBrain_Service.Services.Search;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
@@ -12,11 +13,15 @@ namespace BambooBrain_Service.Controllers
     {
         private readonly IAISearchService _search;
         private readonly IRagChatService _ragChat;
+        private readonly IDocumentRepository _documentRepository;
+        private readonly ILogger<SearchController> _logger;
 
-        public SearchController(IAISearchService search, IRagChatService ragChat)
+        public SearchController(IAISearchService search, IRagChatService ragChat, IDocumentRepository documentRepository, ILogger<SearchController> logger)
         {
             _search = search;
             _ragChat = ragChat;
+            _documentRepository = documentRepository;
+            _logger = logger;
         }
 
         // Semantic library search
@@ -60,14 +65,20 @@ namespace BambooBrain_Service.Controllers
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (userId == null) return Unauthorized();
 
-            // Trigger indexing in background
+            // Fetch the document and re-index it
+            var document = await _documentRepository.GetByIdAsync(documentId, userId);
+            if (document == null) return NotFound();
+
+            if (document.ExtractionStatus != "ready")
+                return BadRequest(new { message = "Document extraction not complete yet." });
+
             _ = Task.Run(async () =>
             {
-                // You'll need to inject IDocumentRepository here
-                // and fetch the document before indexing
+                await _search.IndexDocumentAsync(document);
+                _logger.LogInformation("Re-indexed document {Id}", documentId);
             });
 
-            return Ok(new { message = "Indexing triggered." });
+            return Ok(new { message = "Re-indexing started." });
         }
     }
 

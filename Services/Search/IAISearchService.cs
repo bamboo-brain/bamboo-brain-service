@@ -13,7 +13,7 @@
 
         // RAG
         Task<RagResult> SearchChunksForRagAsync(
-            string userId, string query, int topChunks = 5);
+            string userId, string query, int topChunks = 5, string? documentTitleHint = null);
     }
 
     public class DocumentSearchResult

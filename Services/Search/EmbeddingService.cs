@@ -24,14 +24,19 @@ namespace BambooBrain_Service.Services.Search
         {
             try
             {
+                _logger.LogInformation("[Embedding] Generating for: {Text}",
+                    text[..Math.Min(50, text.Length)]);
+
                 var embeddingClient = _client.GetEmbeddingClient(_deploymentName);
                 var response = await embeddingClient.GenerateEmbeddingAsync(text);
-                return response.Value.ToFloats().ToArray();
+                var vector = response.Value.ToFloats().ToArray();
+
+                _logger.LogInformation("[Embedding] Success — {Dims} dimensions", vector.Length);
+                return vector;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Embedding failed for text: {Text}",
-                    text[..Math.Min(50, text.Length)]);
+                _logger.LogError(ex, "[Embedding] FAILED for deployment: {Name}", _deploymentName);
                 return Array.Empty<float>();
             }
         }

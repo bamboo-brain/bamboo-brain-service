@@ -30,9 +30,21 @@ namespace BambooBrain_Service.Services.Search
             string userId, string question,
             List<RagChatMessage>? history = null)
         {
+            // Check if question mentions a specific document title
+            string? documentTitleHint = null;
+            if (question.Contains(".pdf") || question.Contains(".mp4") ||
+                question.Contains(".mp3"))
+            {
+                // Extract filename from question
+                var words = question.Split(' ');
+                documentTitleHint = words.FirstOrDefault(w =>
+                    w.Contains(".pdf") || w.Contains(".mp4") || w.Contains(".mp3"));
+            }
+
             // Step 1 — retrieve relevant chunks
             var ragResult = await _search.SearchChunksForRagAsync(
-                userId, question, topChunks: 5);
+                userId, question, topChunks: 5,
+                documentTitleHint: documentTitleHint);  // ← pass hint
 
             var hasContext = ragResult.Chunks.Any();
 

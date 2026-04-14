@@ -127,6 +127,7 @@ namespace BambooBrain_Service.Services.Document
             {
                 try
                 {
+                    _logger.LogInformation( "Triggering extraction for {Id}, fileType: {Type}", document.Id, document.FileType);
                     switch (document.FileType)
                     {
                         case "pdf":
@@ -136,7 +137,7 @@ namespace BambooBrain_Service.Services.Document
                         case "audio":
                             await _audioExtraction.ExtractAsync(document);
                             break;
-                        case "video":                                    // ← add
+                        case "video":
                             await _videoExtraction.ExtractAsync(document);
                             break;
                         default:
