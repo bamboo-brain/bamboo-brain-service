@@ -23,6 +23,7 @@ using BambooBrain_Service.Services.Planner;
 using BambooBrain_Service.Repositories.Notifications;
 using BambooBrain_Service.Services.Notifications;
 using BambooBrain_Service.Services.Settings;
+using BambooBrain_Service.Services.Search;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -146,7 +147,18 @@ builder.Services.AddScoped<IPlannerService, PlannerService>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 
+builder.Services.AddSingleton<SearchIndexSetup>();
+builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
+builder.Services.AddScoped<IAISearchService, AISearchService>();
+builder.Services.AddScoped<IRagChatService, RagChatService>();
+
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var indexSetup = scope.ServiceProvider.GetRequiredService<SearchIndexSetup>();
+    await indexSetup.EnsureIndexesExistAsync();
+}
 
 if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
 {

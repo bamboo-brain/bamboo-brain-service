@@ -3,6 +3,7 @@ using BambooBrain_Service.Repositories.Documents;
 using BambooBrain_Service.Services.BlobStorage;
 using BambooBrain_Service.Services.Extraction;
 using BambooBrain_Service.Services.Notifications;
+using BambooBrain_Service.Services.Search;
 
 namespace BambooBrain_Service.Services.Document
 {
@@ -13,6 +14,7 @@ namespace BambooBrain_Service.Services.Document
         private readonly IConfiguration _config;
         private readonly IExtractionService _documentExtraction;
         private readonly INotificationService _notifications;
+        private readonly IAISearchService _aiSearch;
         private readonly AudioExtractionService _audioExtraction;
         private readonly VideoExtractionService _videoExtraction;
         private readonly ILogger<AudioExtractionService> _logger;
@@ -37,6 +39,7 @@ namespace BambooBrain_Service.Services.Document
             IBlobStorageService blob,
             IExtractionService documentExtraction,
             INotificationService notifications,
+            IAISearchService aiSearch,
             AudioExtractionService audioExtraction,
             VideoExtractionService videoExtraction,
             ILogger<AudioExtractionService> logger,
@@ -48,6 +51,7 @@ namespace BambooBrain_Service.Services.Document
             _audioExtraction = audioExtraction;
             _videoExtraction = videoExtraction;
             _notifications = notifications;
+            _aiSearch = aiSearch;
             _logger = logger;
             _config = config;
         }
@@ -113,6 +117,8 @@ namespace BambooBrain_Service.Services.Document
 
             await _blob.DeleteAsync(doc.BlobPath, container);
             await _documents.DeleteAsync(id, userId);
+
+            await _aiSearch.DeleteDocumentFromIndexAsync(id, userId);
         }
 
         private async Task TriggerExtractionAsync(Models.Document document)
@@ -137,6 +143,11 @@ namespace BambooBrain_Service.Services.Document
                             _logger.LogWarning("No handler for: {Type}", document.FileType);
                             break;
                     }
+
+                    var extracted = await _documents.GetByIdAsync(
+                        document.Id, document.UserId);
+                            if (extracted?.ExtractionStatus == "ready")
+                                await _aiSearch.IndexDocumentAsync(extracted);
 
                     await _notifications.SendProcessingCompleteAsync(
                         document.UserId,
