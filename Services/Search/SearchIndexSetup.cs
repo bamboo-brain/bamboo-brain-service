@@ -33,34 +33,37 @@ namespace BambooBrain_Service.Services.Search
             var indexName = _config["AzureSearch:WordsIndex"]!;
 
             var fields = new List<SearchField>
-        {
-            new SimpleField("id", SearchFieldDataType.String)
-                { IsKey = true, IsFilterable = true },
-            new SimpleField("userId", SearchFieldDataType.String)
-                { IsFilterable = true },
-            new SimpleField("documentId", SearchFieldDataType.String)
-                { IsFilterable = true },
-            new SearchableField("word") { IsFilterable = true },
-            new SearchableField("pinyin") { IsFilterable = true },
-            new SearchableField("meaning") { IsFilterable = true },
-            new SimpleField("hskLevel", SearchFieldDataType.Int32)
-                { IsFilterable = true, IsSortable = true },
-            new SimpleField("frequency", SearchFieldDataType.Int32)
-                { IsFilterable = true, IsSortable = true },
-            new SimpleField("documentTitle", SearchFieldDataType.String)
-                { IsFilterable = true },
-            new SimpleField("documentType", SearchFieldDataType.String)
-                { IsFilterable = true },
-            new SimpleField("indexedAt", SearchFieldDataType.DateTimeOffset)
-                { IsFilterable = true, IsSortable = true },
-            // Vector field for semantic similarity
-            new VectorSearchField("meaningVector", 1536,
-                "hnsw-config")
-        };
+    {
+        new SimpleField("id", SearchFieldDataType.String)
+            { IsKey = true, IsFilterable = true },
+        new SimpleField("userId", SearchFieldDataType.String)
+            { IsFilterable = true },
+        new SimpleField("documentId", SearchFieldDataType.String)
+            { IsFilterable = true },
+        new SearchableField("word") { IsFilterable = true },
+        new SearchableField("pinyin") { IsFilterable = true },
+        new SearchableField("meaning") { IsFilterable = true },
+        new SimpleField("hskLevel", SearchFieldDataType.Int32)
+            { IsFilterable = true, IsSortable = true },
+        new SimpleField("frequency", SearchFieldDataType.Int32)
+            { IsFilterable = true, IsSortable = true },
+        new SimpleField("documentTitle", SearchFieldDataType.String)
+            { IsFilterable = true },
+        new SimpleField("documentType", SearchFieldDataType.String)
+            { IsFilterable = true },
+        new SimpleField("indexedAt", SearchFieldDataType.DateTimeOffset)
+            { IsFilterable = true, IsSortable = true },
+        // ← profile name must match VectorSearchProfile name below
+        new VectorSearchField("meaningVector", 1536, "hnsw-profile")
+    };
 
             var vectorSearch = new VectorSearch();
+            // Step 1 — define the algorithm
             vectorSearch.Algorithms.Add(
                 new HnswAlgorithmConfiguration("hnsw-config"));
+            // Step 2 — define the profile that links field → algorithm
+            vectorSearch.Profiles.Add(
+                new VectorSearchProfile("hnsw-profile", "hnsw-config"));
 
             var index = new SearchIndex(indexName, fields)
             {
@@ -68,18 +71,18 @@ namespace BambooBrain_Service.Services.Search
                 SemanticSearch = new SemanticSearch
                 {
                     Configurations =
-                {
-                    new SemanticConfiguration("semantic-config",
-                        new SemanticPrioritizedFields
+            {
+                new SemanticConfiguration("semantic-config",
+                    new SemanticPrioritizedFields
+                    {
+                        TitleField = new SemanticField("word"),
+                        ContentFields =
                         {
-                            TitleField = new SemanticField("word"),
-                            ContentFields =
-                            {
-                                new SemanticField("meaning"),
-                                new SemanticField("pinyin")
-                            }
-                        })
-                }
+                            new SemanticField("meaning"),
+                            new SemanticField("pinyin")
+                        }
+                    })
+            }
                 }
             };
 
@@ -95,37 +98,38 @@ namespace BambooBrain_Service.Services.Search
         }
 
         // ── Document chunks index ──────────────────────────────────────────────
-
         private async Task EnsureChunksIndexAsync()
         {
             var indexName = _config["AzureSearch:ChunksIndex"]!;
 
             var fields = new List<SearchField>
-        {
-            new SimpleField("id", SearchFieldDataType.String)
-                { IsKey = true, IsFilterable = true },
-            new SimpleField("userId", SearchFieldDataType.String)
-                { IsFilterable = true },
-            new SimpleField("documentId", SearchFieldDataType.String)
-                { IsFilterable = true },
-            new SimpleField("documentTitle", SearchFieldDataType.String)
-                { IsFilterable = true },
-            new SimpleField("documentType", SearchFieldDataType.String)
-                { IsFilterable = true },
-            new SimpleField("chunkIndex", SearchFieldDataType.Int32)
-                { IsFilterable = true, IsSortable = true },
-            new SearchableField("content") { IsFilterable = false },
-            new SimpleField("hskLevel", SearchFieldDataType.Int32)
-                { IsFilterable = true },
-            new SimpleField("indexedAt", SearchFieldDataType.DateTimeOffset)
-                { IsFilterable = true, IsSortable = true },
-            // Vector field for semantic similarity
-            new VectorSearchField("contentVector", 1536, "hnsw-config")
-        };
+            {
+                new SimpleField("id", SearchFieldDataType.String)
+                    { IsKey = true, IsFilterable = true },
+                new SimpleField("userId", SearchFieldDataType.String)
+                    { IsFilterable = true },
+                new SimpleField("documentId", SearchFieldDataType.String)
+                    { IsFilterable = true },
+                new SimpleField("documentTitle", SearchFieldDataType.String)
+                    { IsFilterable = true },
+                new SimpleField("documentType", SearchFieldDataType.String)
+                    { IsFilterable = true },
+                new SimpleField("chunkIndex", SearchFieldDataType.Int32)
+                    { IsFilterable = true, IsSortable = true },
+                new SearchableField("content") { IsFilterable = false },
+                new SimpleField("hskLevel", SearchFieldDataType.Int32)
+                    { IsFilterable = true },
+                new SimpleField("indexedAt", SearchFieldDataType.DateTimeOffset)
+                    { IsFilterable = true, IsSortable = true },
+                // ← profile name must match VectorSearchProfile name below
+                new VectorSearchField("contentVector", 1536, "hnsw-profile")
+            };
 
             var vectorSearch = new VectorSearch();
             vectorSearch.Algorithms.Add(
                 new HnswAlgorithmConfiguration("hnsw-config"));
+            vectorSearch.Profiles.Add(
+                new VectorSearchProfile("hnsw-profile", "hnsw-config"));
 
             var index = new SearchIndex(indexName, fields)
             {
@@ -133,17 +137,17 @@ namespace BambooBrain_Service.Services.Search
                 SemanticSearch = new SemanticSearch
                 {
                     Configurations =
-                {
-                    new SemanticConfiguration("semantic-config",
-                        new SemanticPrioritizedFields
+            {
+                new SemanticConfiguration("semantic-config",
+                    new SemanticPrioritizedFields
+                    {
+                        ContentFields =
                         {
-                            ContentFields =
-                            {
-                                new SemanticField("content"),
-                                new SemanticField("documentTitle")
-                            }
-                        })
-                }
+                            new SemanticField("content"),
+                            new SemanticField("documentTitle")
+                        }
+                    })
+            }
                 }
             };
 

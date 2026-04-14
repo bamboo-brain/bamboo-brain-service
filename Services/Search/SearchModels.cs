@@ -37,8 +37,7 @@ namespace BambooBrain_Service.Services.Search
         [SimpleField(IsFilterable = true, IsSortable = true)]
         public DateTimeOffset IndexedAt { get; set; } = DateTimeOffset.UtcNow;
 
-        [VectorSearchField(VectorSearchDimensions = 1536,
-            VectorSearchProfileName = "hnsw-config")]
+        [VectorSearchField(VectorSearchDimensions = 1536, VectorSearchProfileName = "hnsw-profile")]
         public float[]? MeaningVector { get; set; }
     }
 
@@ -71,8 +70,7 @@ namespace BambooBrain_Service.Services.Search
         [SimpleField(IsFilterable = true, IsSortable = true)]
         public DateTimeOffset IndexedAt { get; set; } = DateTimeOffset.UtcNow;
 
-        [VectorSearchField(VectorSearchDimensions = 1536,
-            VectorSearchProfileName = "hnsw-config")]
+        [VectorSearchField(VectorSearchDimensions = 1536, VectorSearchProfileName = "hnsw-profile")]
         public float[]? ContentVector { get; set; }
     }
 }
