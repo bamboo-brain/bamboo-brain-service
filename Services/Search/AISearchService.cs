@@ -103,7 +103,14 @@ namespace BambooBrain_Service.Services.Search
 
         private async Task IndexChunksAsync(Models.Document document)
         {
-            if (string.IsNullOrWhiteSpace(document.ExtractedText)) return;
+            _logger.LogInformation("[Chunks] ExtractedText length: {Len}", document.ExtractedText?.Length ?? 0);
+
+            if (string.IsNullOrWhiteSpace(document.ExtractedText))
+            {
+                _logger.LogWarning("[Chunks] No extracted text for document {Id} — skipping chunks",
+                    document.Id);
+                return;
+            }
 
             var chunks = ChunkText(document.ExtractedText, ChunkSize, ChunkOverlap);
             var embeddings = await _embeddings.GetEmbeddingsBatchAsync(chunks);

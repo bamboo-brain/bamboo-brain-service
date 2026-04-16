@@ -14,10 +14,10 @@ namespace BambooBrain_Service.Services.Search
             _logger = logger;
             _client = new AzureOpenAIClient(
                 new Uri(config["AzureOpenAI:Endpoint"]!),
-                new AzureKeyCredential(config["AzureOpenAI:ApiKey"]!)
+                new AzureKeyCredential(config["AzureOpenAI:ApiKey"]!),
+                new AzureOpenAIClientOptions(AzureOpenAIClientOptions.ServiceVersion.V2024_10_21)
             );
-            _deploymentName = config["AzureOpenAI:EmbeddingDeployment"]
-                ?? "text-embedding-ada-002";
+            _deploymentName = config["AzureOpenAI:EmbeddingDeployment"] ?? "text-embedding-ada-002";
         }
 
         public async Task<float[]> GetEmbeddingAsync(string text)
