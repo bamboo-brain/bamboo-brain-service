@@ -7,13 +7,12 @@
         Task DeleteDocumentFromIndexAsync(string documentId, string userId);
 
         // Search
-        Task<DocumentSearchResult> SearchDocumentsAsync(
-            string userId, string query, int top = 10,
-            string? fileTypeFilter = null, int? hskLevelFilter = null);
+        Task<DocumentSearchResult> SearchDocumentsAsync(string userId, string query, int top = 10, string? fileTypeFilter = null, int? hskLevelFilter = null);
 
         // RAG
-        Task<RagResult> SearchChunksForRagAsync(
-            string userId, string query, int topChunks = 5, string? documentTitleHint = null);
+        Task<RagResult> SearchChunksForRagAsync(string userId, string query, int topChunks = 5, string? documentTitleHint = null);
+
+        Task<string> SearchWordsForContextAsync(string userId, string query, int top = 20);
     }
 
     public class DocumentSearchResult

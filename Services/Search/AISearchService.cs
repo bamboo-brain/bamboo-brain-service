@@ -1,6 +1,7 @@
 ﻿using Azure.Search.Documents.Models;
 using Azure.Search.Documents;
 using Azure;
+using System.Text;
 
 namespace BambooBrain_Service.Services.Search
 {
@@ -31,6 +32,61 @@ namespace BambooBrain_Service.Services.Search
                 endpoint, config["AzureSearch:WordsIndex"]!, credential);
             _chunksClient = new SearchClient(
                 endpoint, config["AzureSearch:ChunksIndex"]!, credential);
+        }
+
+        public async Task<string> SearchWordsForContextAsync(string userId, string query, int top = 20)
+        {
+            var queryVector = await _embeddings.GetEmbeddingAsync(query);
+
+            var options = new SearchOptions
+            {
+                Filter = $"userId eq '{userId}'",
+                Size = top,
+                Select = { "word", "pinyin", "meaning", "hskLevel",
+                   "frequency", "documentTitle" },
+            };
+
+            if (queryVector.Length > 0)
+            {
+                options.VectorSearch = new VectorSearchOptions
+                {
+                    Queries =
+            {
+                new VectorizedQuery(queryVector)
+                {
+                    Fields = { "meaningVector" },
+                    KNearestNeighborsCount = top
+                }
+            }
+                };
+            }
+
+            var results = await _wordsClient.SearchAsync<WordSearchDocument>(
+                query, options);
+
+            var wordGroups = new Dictionary<string, List<string>>();
+
+            await foreach (var result in results.Value.GetResultsAsync())
+            {
+                var doc = result.Document;
+                if (!wordGroups.ContainsKey(doc.DocumentTitle))
+                    wordGroups[doc.DocumentTitle] = new();
+
+                wordGroups[doc.DocumentTitle].Add(
+                    $"{doc.Word} ({doc.Pinyin}) — {doc.Meaning}");
+            }
+
+            if (!wordGroups.Any()) return string.Empty;
+
+            var sb = new StringBuilder();
+            foreach (var (docTitle, words) in wordGroups)
+            {
+                sb.AppendLine($"[From: {docTitle}]");
+                sb.AppendLine(string.Join(", ", words));
+                sb.AppendLine();
+            }
+
+            return sb.ToString();
         }
 
         // ── Index document ─────────────────────────────────────────────────────

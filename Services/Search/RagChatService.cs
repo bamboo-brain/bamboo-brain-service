@@ -46,7 +46,21 @@ namespace BambooBrain_Service.Services.Search
                 userId, question, topChunks: 5,
                 documentTitleHint: documentTitleHint);  // ← pass hint
 
-            var hasContext = ragResult.Chunks.Any();
+            // ← If chunk content is too short, also search words index
+            var hasGoodContext = ragResult.Chunks.Any(c => c.Content.Length > 100);
+
+            string combinedContext = ragResult.CombinedContext;
+
+            if (!hasGoodContext)
+            {
+                _logger.LogInformation("[RAG] Chunks too short, falling back to words index");
+                var wordsResult = await _search.SearchWordsForContextAsync(
+                    userId, question, top: 20);
+                combinedContext = wordsResult;
+            }
+
+            var hasContext = !string.IsNullOrWhiteSpace(combinedContext) &&
+                     combinedContext.Length > 50;
 
             // Step 2 — build messages for GPT-4o
             var messages = new List<ChatMessage>();
