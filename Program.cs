@@ -147,7 +147,7 @@ builder.Services.AddScoped<IPlannerService, PlannerService>();
 builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 
-builder.Services.AddSingleton<SearchIndexSetup>();
+builder.Services.AddScoped<SearchIndexSetup>();
 builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
 builder.Services.AddScoped<IAISearchService, AISearchService>();
 builder.Services.AddScoped<IRagChatService, RagChatService>();
@@ -156,8 +156,21 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
-    var indexSetup = scope.ServiceProvider.GetRequiredService<SearchIndexSetup>();
-    await indexSetup.EnsureIndexesExistAsync();
+    var indexSetup = scope.ServiceProvider
+        .GetRequiredService<SearchIndexSetup>();
+    try
+    {
+        await indexSetup.EnsureIndexesExistAsync();
+        var logger = scope.ServiceProvider
+            .GetRequiredService<ILogger<Program>>();
+        logger.LogInformation("AI Search indexes ensured.");
+    }
+    catch (Exception ex)
+    {
+        var logger = scope.ServiceProvider
+            .GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Failed to ensure AI Search indexes on startup.");
+    }
 }
 
 if (app.Environment.IsDevelopment() || app.Environment.IsProduction())

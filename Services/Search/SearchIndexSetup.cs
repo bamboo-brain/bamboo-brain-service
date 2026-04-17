@@ -22,8 +22,10 @@ namespace BambooBrain_Service.Services.Search
 
         public async Task EnsureIndexesExistAsync()
         {
+            _logger.LogInformation("Ensuring AI Search indexes exist...");
             await EnsureWordsIndexAsync();
             await EnsureChunksIndexAsync();
+            _logger.LogInformation("AI Search index setup complete.");
         }
 
         // ── Words index ────────────────────────────────────────────────────────

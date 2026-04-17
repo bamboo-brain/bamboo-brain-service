@@ -28,10 +28,45 @@ namespace BambooBrain_Service.Services.Search
             var endpoint = new Uri(config["AzureSearch:Endpoint"]!);
             var credential = new AzureKeyCredential(config["AzureSearch:AdminKey"]!);
 
+            var jsonOptions = new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+            };
+
+            var searchClientOptions = new SearchClientOptions
+            {
+                Serializer = new Azure.Search.Documents.Indexes.FieldBuilder()
+                    .Build(typeof(ChunkSearchDocument))
+                    .ToString() == null
+                        ? null
+                        : new Azure.Core.Serialization.JsonObjectSerializer(jsonOptions)
+            };
+
             _wordsClient = new SearchClient(
-                endpoint, config["AzureSearch:WordsIndex"]!, credential);
+                endpoint,
+                config["AzureSearch:WordsIndex"]!,
+                credential,
+                new SearchClientOptions
+                {
+                    Serializer = new Azure.Core.Serialization.JsonObjectSerializer(
+                        new System.Text.Json.JsonSerializerOptions
+                        {
+                            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+                        })
+                });
+
             _chunksClient = new SearchClient(
-                endpoint, config["AzureSearch:ChunksIndex"]!, credential);
+                endpoint,
+                config["AzureSearch:ChunksIndex"]!,
+                credential,
+                new SearchClientOptions
+                {
+                    Serializer = new Azure.Core.Serialization.JsonObjectSerializer(
+                        new System.Text.Json.JsonSerializerOptions
+                        {
+                            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+                        })
+                });
         }
 
         public async Task<string> SearchWordsForContextAsync(string userId, string query, int top = 20)
