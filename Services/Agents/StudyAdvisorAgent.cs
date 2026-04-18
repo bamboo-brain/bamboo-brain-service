@@ -1,123 +1,228 @@
-﻿using Microsoft.SemanticKernel;
+﻿using Azure;
+using Azure.AI.OpenAI;
+using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.AzureOpenAI;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
+using Newtonsoft.Json;
+using System;
+using System.IO;
 
 namespace BambooBrain_Service.Services.Agents
 {
     public class StudyAdvisorAgent : IStudyAdvisorAgent
     {
         private readonly BambooBrainTools _tools;
-        private readonly IConfiguration _config;
+        private readonly AzureOpenAIClient _aiClient;
+        private readonly string _deploymentName;
         private readonly ILogger<StudyAdvisorAgent> _logger;
-        private readonly FoundryChatCompletionService _chatService;
 
         public StudyAdvisorAgent(
             BambooBrainTools tools,
-            FoundryChatCompletionService chatService,
             IConfiguration config,
             ILogger<StudyAdvisorAgent> logger)
         {
             _tools = tools;
-            _chatService = chatService;
-            _config = config;
             _logger = logger;
+            _deploymentName = config["AzureOpenAI:DeploymentName"]!;
+
+            // ← Same pattern as AudioExtractionService
+            _aiClient = new AzureOpenAIClient(
+                new Uri(config["AzureOpenAI:Endpoint"]!),
+                new AzureKeyCredential(config["AzureOpenAI:ApiKey"]!),
+                new AzureOpenAIClientOptions(
+                    AzureOpenAIClientOptions.ServiceVersion.V2024_10_21)
+            );
         }
 
         public async Task<StudyAdvisorResponse> ChatAsync(string userId, string message, List<AgentMessage>? history = null)
         {
             _tools.UserId = userId;
+            var actionsPerformed = new List<string>();
+            var planAdapted = false;
 
             try
             {
                 _logger.LogInformation(
-                    "[Advisor] Building kernel for user {UserId}", userId);
+                    "[Advisor] Processing: {Message}", message);
 
-                // ← Use FoundryChatCompletionService instead of AddAzureOpenAIChatCompletion
-                var builder = Kernel.CreateBuilder();
-                builder.Services.AddSingleton<IChatCompletionService>(_chatService);
-                var kernel = builder.Build();
+                // ── Step 1: Decide which tools to call based on the question ──────
 
-                // Register tools
-                kernel.Plugins.AddFromObject(_tools, "BambooBrain");
+                var lowerMsg = message.ToLower();
 
-                _logger.LogInformation("[Advisor] Creating agent...");
+                var shouldGetStats =
+                    lowerMsg.Contains("doing") || lowerMsg.Contains("progress") ||
+                    lowerMsg.Contains("streak") || lowerMsg.Contains("week") ||
+                    lowerMsg.Contains("stats") || lowerMsg.Contains("score") ||
+                    lowerMsg.Contains("learn") || lowerMsg.Contains("study") ||
+                    lowerMsg.Contains("how am") || lowerMsg.Contains("performance");
 
-                var agent = new ChatCompletionAgent
+                var shouldGetPlan =
+                    lowerMsg.Contains("plan") || lowerMsg.Contains("schedule") ||
+                    lowerMsg.Contains("session") || lowerMsg.Contains("today") ||
+                    lowerMsg.Contains("next") || lowerMsg.Contains("upcoming") ||
+                    lowerMsg.Contains("adjust") || lowerMsg.Contains("change") ||
+                    lowerMsg.Contains("struggling") || lowerMsg.Contains("behind");
+
+                var shouldGetVocabGap =
+                    lowerMsg.Contains("hsk") || lowerMsg.Contains("gap") ||
+                    lowerMsg.Contains("level") || lowerMsg.Contains("words") ||
+                    lowerMsg.Contains("vocabulary") || lowerMsg.Contains("far");
+
+                var shouldSearch =
+                    lowerMsg.Contains("document") || lowerMsg.Contains("file") ||
+                    lowerMsg.Contains("upload") || lowerMsg.Contains("pdf") ||
+                    lowerMsg.Contains("content") || lowerMsg.Contains("material");
+
+                var shouldAdapt =
+                    lowerMsg.Contains("adjust") || lowerMsg.Contains("update") ||
+                    lowerMsg.Contains("change my plan") || lowerMsg.Contains("fix my") ||
+                    lowerMsg.Contains("reschedule") || lowerMsg.Contains("adapt") ||
+                    lowerMsg.Contains("too hard") || lowerMsg.Contains("too easy") ||
+                    lowerMsg.Contains("struggling") || lowerMsg.Contains("back on track");
+
+                // Default: if question is general, get stats + plan
+                if (!shouldGetStats && !shouldGetPlan && !shouldGetVocabGap &&
+                    !shouldSearch && !shouldAdapt)
                 {
-                    Name = "MasterLingAdvisor",
-                    Instructions = """
-                    You are Master Ling, an expert Chinese language study advisor
-                    for BambooBrain.
+                    shouldGetStats = true;
+                    shouldGetPlan = true;
+                }
 
-                    You have access to tools that give you real data about the user:
-                    - get_user_stats: streak, vocabulary, quiz scores, study time
-                    - get_active_plan: upcoming sessions, skipped events, goals
-                    - search_user_documents: search their uploaded study materials
-                    - adapt_study_plan: modify the plan when adjustment is needed
-                    - send_notification: notify the user about important actions
-                    - get_vocabulary_gap: calculate words needed for target HSK level
+                // ── Step 2: Call relevant tools and collect context ───────────────
 
-                    Rules:
-                    - ALWAYS call tools to get real data before answering
-                    - If asked about progress, call get_user_stats first
-                    - If asked about schedule, call get_active_plan first
-                    - If the user is struggling, check both stats and plan
-                    - Be encouraging, specific, and concise
-                    - Respond in English unless the user writes in Chinese
-                    """,
-                    Kernel = kernel,
-                    Arguments = new KernelArguments(
-                        new OpenAIPromptExecutionSettings
-                        {
-                            ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions,
-                            MaxTokens = 1000,
-                            Temperature = 0.4
-                        })
-                };
+                var contextParts = new List<string>();
 
-                // Build chat history
-                var chatHistory = new ChatHistory();
-                if (history != null)
-                    foreach (var msg in history.TakeLast(6))
+                if (shouldGetStats)
+                {
+                    _logger.LogInformation("[Advisor] Calling get_user_stats");
+                    var stats = await _tools.GetUserStatsAsync();
+                    contextParts.Add($"USER STATS:\n{stats}");
+                    actionsPerformed.Add("get_user_stats");
+                }
+
+                if (shouldGetPlan)
+                {
+                    _logger.LogInformation("[Advisor] Calling get_active_plan");
+                    var plan = await _tools.GetActivePlanAsync();
+                    contextParts.Add($"ACTIVE STUDY PLAN:\n{plan}");
+                    actionsPerformed.Add("get_active_plan");
+                }
+
+                if (shouldGetVocabGap)
+                {
+                    _logger.LogInformation("[Advisor] Calling get_vocabulary_gap");
+                    var gap = await _tools.GetVocabularyGapAsync();
+                    contextParts.Add($"VOCABULARY GAP:\n{gap}");
+                    actionsPerformed.Add("get_vocabulary_gap");
+                }
+
+                if (shouldSearch)
+                {
+                    _logger.LogInformation("[Advisor] Calling search_user_documents");
+                    var docs = await _tools.SearchDocumentsAsync(message, 3);
+                    contextParts.Add($"RELEVANT DOCUMENTS:\n{docs}");
+                    actionsPerformed.Add("search_user_documents");
+                }
+
+                if (shouldAdapt)
+                {
+                    // Get plan first to find planId
+                    if (!actionsPerformed.Contains("get_active_plan"))
                     {
-                        if (msg.Role == "user")
-                            chatHistory.AddUserMessage(msg.Content);
-                        else
-                            chatHistory.AddAssistantMessage(msg.Content);
+                        var plan = await _tools.GetActivePlanAsync();
+                        contextParts.Add($"ACTIVE STUDY PLAN:\n{plan}");
+                        actionsPerformed.Add("get_active_plan");
                     }
-                chatHistory.AddUserMessage(message);
 
-                _logger.LogInformation("[Advisor] Invoking agent...");
+                    // Extract planId from the plan context
+                    var planContext = contextParts
+                        .FirstOrDefault(c => c.Contains("planId"));
 
-                var answer = string.Empty;
-                var actionsPerformed = new List<string>();
-                var planAdapted = false;
-
-                await foreach (var response in agent.InvokeAsync(chatHistory))
-                {
-                    if (response.Role == AuthorRole.Assistant &&
-                        !string.IsNullOrEmpty(response.Content))
+                    if (planContext != null)
                     {
-                        answer = response.Content;
-                        _logger.LogInformation(
-                            "[Advisor] Got answer: {Len} chars", answer.Length);
+                        var planIdMatch = System.Text.RegularExpressions.Regex.Match(
+                            planContext, @"""planId""\s*:\s*""([^""]+)""");
+
+                        if (planIdMatch.Success)
+                        {
+                            _logger.LogInformation("[Advisor] Calling adapt_study_plan");
+                            var adaptation = await _tools.AdaptStudyPlanAsync(
+                                planIdMatch.Groups[1].Value);
+                            contextParts.Add($"PLAN ADAPTATION RESULT:\n{adaptation}");
+                            actionsPerformed.Add("adapt_study_plan");
+                            planAdapted = true;
+
+                            // Send notification about the adaptation
+                            await _tools.SendNotificationAsync(
+                                "Master Ling Updated Your Plan 🤖",
+                                "I reviewed your progress and adjusted your study schedule.",
+                                "adaptation");
+                            actionsPerformed.Add("send_notification");
+                        }
                     }
                 }
 
-                var toolCalls = chatHistory
-                    .Where(m => m.Role == AuthorRole.Tool)
-                    .Select(m => m.Content ?? "tool_called")
-                    .ToList();
+                // ── Step 3: Build GPT-4o prompt with all gathered context ─────────
 
-                actionsPerformed = toolCalls;
-                planAdapted = toolCalls.Any(t =>
-                    t.Contains("adapt_study_plan") ||
-                    t.Contains("planAdapted"));
+                var combinedContext = string.Join("\n\n---\n\n", contextParts);
 
-                if (string.IsNullOrEmpty(answer))
-                    answer = "I wasn't able to generate a response. Please try again.";
+                var systemPrompt = $"""
+                    You are Master Ling, a warm and encouraging Chinese language study advisor
+                    for BambooBrain. You have already gathered real data about the user.
+
+                    REAL DATA FROM USER'S ACCOUNT:
+                    {combinedContext}
+
+                    Instructions:
+                    - Answer using ONLY the real data above — never make up numbers
+                    - Be specific: quote actual streak numbers, words learned, completion rates
+                    - Be encouraging and actionable
+                    - If plan was adapted, mention what changed
+                    - Keep response to 2-3 paragraphs maximum
+                    - Respond in English unless the user writes in Chinese
+                    """;
+
+                // Build conversation history
+                var messages = new List<OpenAI.Chat.ChatMessage>
+                {
+                    new OpenAI.Chat.SystemChatMessage(systemPrompt)
+                };
+
+                if (history != null)
+                {
+                    foreach (var msg in history.TakeLast(4))
+                    {
+                        if (msg.Role == "user")
+                            messages.Add(new OpenAI.Chat.UserChatMessage(msg.Content));
+                        else
+                            messages.Add(new OpenAI.Chat.AssistantChatMessage(msg.Content));
+                    }
+                }
+
+                messages.Add(new OpenAI.Chat.UserChatMessage(message));
+
+                // ── Step 4: Call GPT-4o for final response ─────────────────────────
+
+                _logger.LogInformation(
+                    "[Advisor] Calling GPT-4o with {Count} context parts",
+                    contextParts.Count);
+
+                var chatClient = _aiClient.GetChatClient(_deploymentName);
+                var response = await chatClient.CompleteChatAsync(
+                    messages,
+                    new OpenAI.Chat.ChatCompletionOptions
+                    {
+                        MaxOutputTokenCount = 1000,
+                        Temperature = 0.5f
+                    });
+
+                var answer = response.Value.Content[0].Text;
+
+                _logger.LogInformation(
+                    "[Advisor] Done. Tools used: {Tools}",
+                    string.Join(", ", actionsPerformed));
 
                 return new StudyAdvisorResponse
                 {
