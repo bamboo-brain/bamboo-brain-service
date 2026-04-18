@@ -1,29 +1,30 @@
-﻿using System.Text;
-using BambooBrain_Service.Helpers;
-using BambooBrain_Service.Repositories.Users;
-using BambooBrain_Service.Services.Auth;
-using Microsoft.Azure.Cosmos;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
+﻿using BambooBrain_Service.Helpers;
 using BambooBrain_Service.Repositories.Documents;
+using BambooBrain_Service.Repositories.Flashcards;
+using BambooBrain_Service.Repositories.Notifications;
+using BambooBrain_Service.Repositories.Planner;
+using BambooBrain_Service.Repositories.Quiz;
+using BambooBrain_Service.Repositories.Speaking;
+using BambooBrain_Service.Repositories.Stats;
+using BambooBrain_Service.Repositories.Users;
+using BambooBrain_Service.Services.Agents;
+using BambooBrain_Service.Services.Auth;
 using BambooBrain_Service.Services.BlobStorage;
 using BambooBrain_Service.Services.Document;
 using BambooBrain_Service.Services.Extraction;
-using Microsoft.AspNetCore.Http.Features;
-using Microsoft.OpenApi.Models;
-using BambooBrain_Service.Repositories.Flashcards;
 using BambooBrain_Service.Services.Flashcard;
-using BambooBrain_Service.Repositories.Quiz;
-using BambooBrain_Service.Services.Quiz;
-using BambooBrain_Service.Repositories.Speaking;
-using BambooBrain_Service.Services.Speaking;
-using BambooBrain_Service.Repositories.Planner;
-using BambooBrain_Service.Repositories.Stats;
-using BambooBrain_Service.Services.Planner;
-using BambooBrain_Service.Repositories.Notifications;
 using BambooBrain_Service.Services.Notifications;
-using BambooBrain_Service.Services.Settings;
+using BambooBrain_Service.Services.Planner;
+using BambooBrain_Service.Services.Quiz;
 using BambooBrain_Service.Services.Search;
+using BambooBrain_Service.Services.Settings;
+using BambooBrain_Service.Services.Speaking;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Azure.Cosmos;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -151,6 +152,9 @@ builder.Services.AddScoped<SearchIndexSetup>();
 builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
 builder.Services.AddScoped<IAISearchService, AISearchService>();
 builder.Services.AddScoped<IRagChatService, RagChatService>();
+
+builder.Services.AddScoped<BambooBrainTools>();
+builder.Services.AddScoped<IStudyAdvisorAgent, StudyAdvisorAgent>();
 
 var app = builder.Build();
 
