@@ -153,6 +153,7 @@ builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
 builder.Services.AddScoped<IAISearchService, AISearchService>();
 builder.Services.AddScoped<IRagChatService, RagChatService>();
 
+builder.Services.AddScoped<FoundryChatCompletionService>();
 builder.Services.AddScoped<BambooBrainTools>();
 builder.Services.AddScoped<IStudyAdvisorAgent, StudyAdvisorAgent>();
 

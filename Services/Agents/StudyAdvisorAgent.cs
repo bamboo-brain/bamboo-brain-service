@@ -11,125 +11,126 @@ namespace BambooBrain_Service.Services.Agents
         private readonly BambooBrainTools _tools;
         private readonly IConfiguration _config;
         private readonly ILogger<StudyAdvisorAgent> _logger;
+        private readonly FoundryChatCompletionService _chatService;
 
         public StudyAdvisorAgent(
             BambooBrainTools tools,
+            FoundryChatCompletionService chatService,
             IConfiguration config,
             ILogger<StudyAdvisorAgent> logger)
         {
             _tools = tools;
+            _chatService = chatService;
             _config = config;
             _logger = logger;
         }
 
-        public async Task<StudyAdvisorResponse> ChatAsync(
-            string userId, string message,
-            List<AgentMessage>? history = null)
+        public async Task<StudyAdvisorResponse> ChatAsync(string userId, string message, List<AgentMessage>? history = null)
         {
-            // Set userId on tools for this request
             _tools.UserId = userId;
 
-            // Build Semantic Kernel with Azure OpenAI
-            var kernel = Kernel.CreateBuilder()
-                .AddAzureOpenAIChatCompletion(
-                    deploymentName: _config["AzureOpenAI:DeploymentName"]!,
-                    endpoint: _config["AzureOpenAI:Endpoint"]!,
-                    apiKey: _config["AzureOpenAI:ApiKey"]!
-                )
-                .Build();
-
-            // Register tools as a plugin
-            kernel.Plugins.AddFromObject(_tools, "BambooBrain");
-
-            // Create the agent
-            var agent = new ChatCompletionAgent
+            try
             {
-                Name = "MasterLingAdvisor",
-                Instructions = """
-                You are Master Ling, an expert Chinese language study advisor for BambooBrain.
-                You have access to tools that let you check the user's progress, search their
-                documents, and modify their study plan.
+                _logger.LogInformation(
+                    "[Advisor] Building kernel for user {UserId}", userId);
 
-                Your capabilities:
-                - Check study statistics (streaks, vocabulary, quiz performance)
-                - Review the active study plan and upcoming sessions
-                - Search through uploaded documents for relevant content
-                - Adapt the study plan when needed
-                - Send notifications to keep the user informed
-                - Calculate vocabulary gaps to target HSK level
+                // ← Use FoundryChatCompletionService instead of AddAzureOpenAIChatCompletion
+                var builder = Kernel.CreateBuilder();
+                builder.Services.AddSingleton<IChatCompletionService>(_chatService);
+                var kernel = builder.Build();
 
-                Behavior rules:
-                - ALWAYS use tools to get real data before answering questions about progress
-                - If the user asks about their progress, call get_user_stats first
-                - If the user asks about their plan, call get_active_plan first
-                - If the user mentions struggling, check stats AND plan before suggesting changes
-                - If adaptation is needed, call adapt_study_plan and report what changed
-                - After taking significant actions, send a notification to inform the user
-                - Be encouraging, specific, and actionable
-                - Respond in English unless the user writes in Chinese
-                - Keep responses focused and concise — no more than 3-4 paragraphs
-                """,
-                Kernel = kernel,
-                Arguments = new KernelArguments(
-                    new AzureOpenAIPromptExecutionSettings
+                // Register tools
+                kernel.Plugins.AddFromObject(_tools, "BambooBrain");
+
+                _logger.LogInformation("[Advisor] Creating agent...");
+
+                var agent = new ChatCompletionAgent
+                {
+                    Name = "MasterLingAdvisor",
+                    Instructions = """
+                    You are Master Ling, an expert Chinese language study advisor
+                    for BambooBrain.
+
+                    You have access to tools that give you real data about the user:
+                    - get_user_stats: streak, vocabulary, quiz scores, study time
+                    - get_active_plan: upcoming sessions, skipped events, goals
+                    - search_user_documents: search their uploaded study materials
+                    - adapt_study_plan: modify the plan when adjustment is needed
+                    - send_notification: notify the user about important actions
+                    - get_vocabulary_gap: calculate words needed for target HSK level
+
+                    Rules:
+                    - ALWAYS call tools to get real data before answering
+                    - If asked about progress, call get_user_stats first
+                    - If asked about schedule, call get_active_plan first
+                    - If the user is struggling, check both stats and plan
+                    - Be encouraging, specific, and concise
+                    - Respond in English unless the user writes in Chinese
+                    """,
+                    Kernel = kernel,
+                    Arguments = new KernelArguments(
+                        new OpenAIPromptExecutionSettings
+                        {
+                            ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions,
+                            MaxTokens = 1000,
+                            Temperature = 0.4
+                        })
+                };
+
+                // Build chat history
+                var chatHistory = new ChatHistory();
+                if (history != null)
+                    foreach (var msg in history.TakeLast(6))
                     {
-                        ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions,
-                        MaxTokens = 1000,
-                        Temperature = 0.4
-                    })
-            };
+                        if (msg.Role == "user")
+                            chatHistory.AddUserMessage(msg.Content);
+                        else
+                            chatHistory.AddAssistantMessage(msg.Content);
+                    }
+                chatHistory.AddUserMessage(message);
 
-            // Build chat history
-            var chatHistory = new ChatHistory();
+                _logger.LogInformation("[Advisor] Invoking agent...");
 
-            if (history != null)
-            {
-                foreach (var msg in history.TakeLast(6))
+                var answer = string.Empty;
+                var actionsPerformed = new List<string>();
+                var planAdapted = false;
+
+                await foreach (var response in agent.InvokeAsync(chatHistory))
                 {
-                    if (msg.Role == "user")
-                        chatHistory.AddUserMessage(msg.Content);
-                    else
-                        chatHistory.AddAssistantMessage(msg.Content);
+                    if (response.Role == AuthorRole.Assistant &&
+                        !string.IsNullOrEmpty(response.Content))
+                    {
+                        answer = response.Content;
+                        _logger.LogInformation(
+                            "[Advisor] Got answer: {Len} chars", answer.Length);
+                    }
                 }
+
+                var toolCalls = chatHistory
+                    .Where(m => m.Role == AuthorRole.Tool)
+                    .Select(m => m.Content ?? "tool_called")
+                    .ToList();
+
+                actionsPerformed = toolCalls;
+                planAdapted = toolCalls.Any(t =>
+                    t.Contains("adapt_study_plan") ||
+                    t.Contains("planAdapted"));
+
+                if (string.IsNullOrEmpty(answer))
+                    answer = "I wasn't able to generate a response. Please try again.";
+
+                return new StudyAdvisorResponse
+                {
+                    Answer = answer,
+                    ActionsPerformed = actionsPerformed,
+                    PlanWasAdapted = planAdapted
+                };
             }
-
-            chatHistory.AddUserMessage(message);
-
-            // Run the agent
-            var actionsPerformed = new List<string>();
-            var answer = string.Empty;
-            var planAdapted = false;
-
-            _logger.LogInformation(
-                "[StudyAdvisor] Processing request for user {UserId}: {Message}",
-                userId, message);
-
-            await foreach (var response in agent.InvokeAsync(chatHistory))
+            catch (Exception ex)
             {
-                if (response.Role == AuthorRole.Assistant)
-                {
-                    answer = response.Content ?? string.Empty;
-                }
-                else if (response.Role == AuthorRole.Tool)
-                {
-                    // Track which tools were called
-                    var toolName = response.AuthorName ?? "unknown";
-                    actionsPerformed.Add(toolName);
-
-                    if (toolName.Contains("adapt_study_plan"))
-                        planAdapted = true;
-
-                    _logger.LogInformation(
-                        "[StudyAdvisor] Tool called: {Tool}", toolName);
-                }
+                _logger.LogError(ex, "[Advisor] FAILED for user {UserId}", userId);
+                throw;
             }
-
-            return new StudyAdvisorResponse
-            {
-                Answer = answer,
-                ActionsPerformed = actionsPerformed,
-                PlanWasAdapted = planAdapted
-            };
         }
     }
 }
