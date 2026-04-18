@@ -1,4 +1,5 @@
 ﻿using BambooBrain_Service.Repositories.Documents;
+using BambooBrain_Service.Services.Safety;
 using BambooBrain_Service.Services.Search;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,14 +15,16 @@ namespace BambooBrain_Service.Controllers
         private readonly IAISearchService _search;
         private readonly IRagChatService _ragChat;
         private readonly IDocumentRepository _documentRepository;
+        private readonly IContentSafetyService _safety;
         private readonly ILogger<SearchController> _logger;
 
-        public SearchController(IAISearchService search, IRagChatService ragChat, IDocumentRepository documentRepository, ILogger<SearchController> logger)
+        public SearchController(IAISearchService search, IRagChatService ragChat, IDocumentRepository documentRepository, ILogger<SearchController> logger, IContentSafetyService safety)
         {
             _search = search;
             _ragChat = ragChat;
             _documentRepository = documentRepository;
             _logger = logger;
+            _safety = safety;
         }
 
         // Semantic library search
@@ -52,6 +55,21 @@ namespace BambooBrain_Service.Controllers
 
             if (string.IsNullOrWhiteSpace(request.Question))
                 return BadRequest(new { message = "Question is required." });
+
+            var safetyCheck = await _safety.CheckTextAsync(request.Question);
+            if (!safetyCheck.IsSafe)
+            {
+                _logger.LogWarning(
+                    "[Safety] Blocked message from user {UserId}: {Reason}",
+                    userId, safetyCheck.BlockedReason);
+                return BadRequest(new
+                {
+                    message = "Your message was flagged by our content safety system. " +
+                              "Please keep conversations focused on Chinese language learning.",
+                    blocked = true,
+                    reason = safetyCheck.BlockedReason
+                });
+            }
 
             var response = await _ragChat.ChatAsync(
                 userId, request.Question, request.History);

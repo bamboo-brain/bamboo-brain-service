@@ -16,6 +16,7 @@ using BambooBrain_Service.Services.Flashcard;
 using BambooBrain_Service.Services.Notifications;
 using BambooBrain_Service.Services.Planner;
 using BambooBrain_Service.Services.Quiz;
+using BambooBrain_Service.Services.Safety;
 using BambooBrain_Service.Services.Search;
 using BambooBrain_Service.Services.Settings;
 using BambooBrain_Service.Services.Speaking;
@@ -155,6 +156,8 @@ builder.Services.AddScoped<IRagChatService, RagChatService>();
 
 builder.Services.AddScoped<BambooBrainTools>();
 builder.Services.AddScoped<IStudyAdvisorAgent, StudyAdvisorAgent>();
+
+builder.Services.AddScoped<IContentSafetyService, ContentSafetyService>();
 
 var app = builder.Build();
 
