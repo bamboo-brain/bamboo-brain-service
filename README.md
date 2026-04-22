@@ -1,5 +1,3 @@
-Here's the improved `README.md` file, incorporating the new content while maintaining the existing structure and information:
-
 # BambooBrain
 BambooBrain is a Chinese learning agent built to help learners grow their Chinese and break every barrier. The idea behind this project is simple: learning Mandarin should not feel overwhelming, generic, or disconnected from real life. It should feel personal, intelligent, and adaptive. With BambooBrain, learners can upload their own Chinese materials such as PDFs, videos, and audio, get instant vocabulary support, practice speaking with AI, and receive an automatically guided study journey. Instead of forcing learners into a fixed curriculum, BambooBrain creates a path that grows with them.
 
@@ -56,14 +54,3 @@ The application architecture integrates various Azure AI and Cloud Services with
    dotnet build
 6. Run the application:
    dotnet run
-
-## Contributing
-We welcome contributions to BambooBrain! If you have suggestions for improvements or new features, please open an issue or submit a pull request.
-
-## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-### Changes Made:
-- Added a **Contributing** section to encourage community involvement.
-- Included a **License** section to clarify the project's licensing.
-- Ensured the overall flow and coherence of the document were maintained while integrating the new content.
